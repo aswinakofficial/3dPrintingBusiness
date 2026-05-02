@@ -1,0 +1,64 @@
+paths:
+  input: ./input
+  output: ./output
+  logs: ./logs
+
+runtime:
+  local_gpu: false
+  cloud_provider: azure
+  cuda_device: 0
+
+engines:
+  trellis:
+    enabled: true
+    docker_image: 3dfigurine-trellis:latest
+    resolution: 1024
+    max_images: 4
+    model_id: microsoft/TRELLIS.2-4B
+    
+  meshroom:
+    enabled: true
+    docker_image: 3dfigurine-meshroom:latest
+    resolution: 1024
+    max_images: 50
+    min_images: 10
+    use_gpu: true
+    mvs_step_enabled: true
+
+post_processing:
+  export_stl: true
+  auto_repair: true
+  
+  mesh_repair:
+    max_hole_size: 30
+    remove_isolated_pieces: true
+    
+  hollowing:
+    enabled: true
+    wall_thickness_mm: 2.0
+    voxel_resolution_mm: 1.0
+    
+  supports:
+    enabled: true
+    angle_threshold_degrees: 45
+    diameter_mm: 4.0
+
+print_profiles:
+  figurine_standard:
+    target_height_mm: 80
+    min_wall_thickness_mm: 1.5
+    
+  figurine_detailed:
+    target_height_mm: 100
+    min_wall_thickness_mm: 1.0
+    
+  figurine_miniature:
+    target_height_mm: 50
+    min_wall_thickness_mm: 2.0
+
+logging:
+  level: INFO
+  format: json
+  file_rotation: daily
+  max_file_size_mb: 10
+  retention_days: 30
