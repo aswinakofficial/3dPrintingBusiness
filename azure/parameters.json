@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2021-09-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "projectName": {
+      "value": "3dfigurine"
+    },
+    "environment": {
+      "value": "prod"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "vmSize": {
+      "value": "Standard_NC24ads_A100_v4"
+    },
+    "containerImage": {
+      "value": {
+        "trellis": "myregistry.azurecr.io/3dfigurine-trellis:latest",
+        "meshroom": "myregistry.azurecr.io/3dfigurine-meshroom:latest"
+      }
+    },
+    "storageAccountType": {
+      "value": "Premium_LRS"
+    },
+    "enableMonitoring": {
+      "value": true
+    },
+    "enableAutoScale": {
+      "value": false
+    }
+  }
+}
