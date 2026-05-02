@@ -65,7 +65,7 @@ def check_methods(filepath: Path, class_name: str) -> tuple[bool, List[str]]:
 
 
 def validate_phase2a():
-    """Validate Phase 2a & 2b & 3 implementation."""
+    """Validate Phase 2a-4 implementation."""
     project_root = Path(__file__).parent.parent
     
     # Files to check
@@ -134,10 +134,38 @@ def validate_phase2a():
                 "PostProcessingPipeline": ["__init__", "process_mesh"],
             }
         }),
+        ("main.py", {
+            "classes": ["Config", "Pipeline"],
+            "methods": {
+                "Config": [
+                    "__init__",
+                    "get",
+                    "get_output_dir",
+                    "get_input_dir",
+                    "get_logs_dir",
+                    "_validate_config",
+                ],
+                "Pipeline": [
+                    "__init__",
+                    "run",
+                    "_validate_inputs",
+                    "_load_engine",
+                    "_preprocess_images",
+                    "_run_inference",
+                    "_post_process_mesh",
+                    "_save_metadata",
+                    "_get_default_post_processing_config",
+                ],
+            }
+        }),
+        ("tests/test_main.py", {
+            "classes": ["TestConfig", "TestPipeline", "TestPipelineIntegration"],
+            "methods": {}
+        }),
     ]
     
     print("=" * 70)
-    print("PHASE 2a & 2b & 3 VALIDATION REPORT")
+    print("PHASES 2a-4 VALIDATION REPORT")
     print("=" * 70)
     print()
     
