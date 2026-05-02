@@ -65,7 +65,7 @@ def check_methods(filepath: Path, class_name: str) -> tuple[bool, List[str]]:
 
 
 def validate_phase2a():
-    """Validate Phase 2a implementation."""
+    """Validate Phase 2a & 2b & 3 implementation."""
     project_root = Path(__file__).parent.parent
     
     # Files to check
@@ -82,7 +82,6 @@ def validate_phase2a():
                     "_extract_mesh_from_output",
                     "_voxels_to_mesh",
                     "postprocess",
-                    # Note: get_engine_name and get_engine_info are inherited from Engine base class
                 ]
             }
         }),
@@ -105,10 +104,40 @@ def validate_phase2a():
                 ]
             }
         }),
+        ("utils/post_processor.py", {
+            "classes": [
+                "PostProcessingConfig",
+                "MeshRepair",
+                "MeshHollowing",
+                "SupportGenerator",
+                "PostProcessingPipeline",
+            ],
+            "methods": {
+                "MeshRepair": ["__init__", "repair_mesh", "_fill_holes"],
+                "MeshHollowing": [
+                    "__init__",
+                    "hollow_mesh",
+                    "_make_watertight",
+                    "_create_hollow_voxel",
+                    "_create_hollow_offset",
+                    "_add_drainage_holes",
+                ],
+                "SupportGenerator": [
+                    "__init__",
+                    "generate_supports",
+                    "_identify_overhangs",
+                    "_group_supports",
+                    "_find_connected_region",
+                    "_create_support_columns",
+                    "_add_raft",
+                ],
+                "PostProcessingPipeline": ["__init__", "process_mesh"],
+            }
+        }),
     ]
     
     print("=" * 70)
-    print("PHASE 2a & 2b VALIDATION REPORT")
+    print("PHASE 2a & 2b & 3 VALIDATION REPORT")
     print("=" * 70)
     print()
     
