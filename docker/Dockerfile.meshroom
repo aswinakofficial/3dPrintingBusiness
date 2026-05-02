@@ -1,0 +1,90 @@
+# Meshroom SfM Engine Dockerfile
+# Image size: ~5-7GB
+# Base: NVIDIA CUDA 12.4.1 runtime + Ubuntu 22.04
+# Includes: Meshroom, AliceVision, OpenImageIO
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+# Set metadata
+LABEL maintainer="3D Figurine Lab"
+LABEL description="Meshroom SfM 3D Reconstruction Engine"
+LABEL version="1.0"
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TZ=UTC
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+
+# Install system dependencies (including conda)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    wget \
+    ca-certificates \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    ffmpeg \
+    imagemagick \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set python3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+# Create working directory
+WORKDIR /app
+
+# Copy project files
+COPY requirements.txt .
+COPY config.yaml .
+COPY main.py .
+COPY engines/ ./engines/
+COPY utils/ ./utils/
+COPY scripts/ ./scripts/
+COPY docker/entrypoint-meshroom.sh /app/entrypoint.sh
+
+# Install Python dependencies (excluding torch/cuda specific ones for container)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir \
+    transformers==4.36.2 \
+    diffusers==0.24.0 \
+    trimesh==4.0.0 \
+    pymeshlab==2022.2.45 \
+    open3d==0.17.0 \
+    Pillow==10.1.0 \
+    rembg==2.0.57 \
+    opencv-python==4.8.1.78 \
+    loguru==0.7.2 \
+    rich==13.7.0 \
+    pyyaml==6.0.1 \
+    pytest==7.4.3 \
+    scipy==1.11.4
+
+# Install Meshroom via pip (includes AliceVision)
+RUN pip install --no-cache-dir meshroom
+
+# Verify Meshroom installation
+RUN which meshroom_photogrammetry || python3 -c "import meshroom; print('Meshroom available')"
+
+# Create necessary directories
+RUN mkdir -p /app/input /app/output /app/logs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD meshroom_photogrammetry --help > /dev/null 2>&1 || exit 1
+
+# Set entrypoint
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python", "main.py", "--help"]

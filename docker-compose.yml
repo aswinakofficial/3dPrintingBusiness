@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # TRELLIS.2 Engine Container
+  trellis-engine:
+    image: 3dfigurine-trellis:latest
+    container_name: 3dfigurine-trellis
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.trellis
+    runtime: nvidia  # Enable GPU support
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0  # Adjust as needed
+    volumes:
+      - ./input:/app/input:rw
+      - ./output:/app/output:rw
+      - ./logs:/app/logs:rw
+      - ./config.yaml:/app/config.yaml:ro
+    working_dir: /app
+    command: python main.py --engine trellis --images /app/input/*.jpg --output /app/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: "no"
+    stdin_open: false
+    tty: false
+
+  # Meshroom SfM Engine Container
+  meshroom-engine:
+    image: 3dfigurine-meshroom:latest
+    container_name: 3dfigurine-meshroom
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.meshroom
+    runtime: nvidia  # Enable GPU support
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0  # Adjust as needed
+    volumes:
+      - ./input:/app/input:rw
+      - ./output:/app/output:rw
+      - ./logs:/app/logs:rw
+      - ./config.yaml:/app/config.yaml:ro
+    working_dir: /app
+    command: python main.py --engine meshroom --directory /app/input --output /app/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: "no"
+    stdin_open: false
+    tty: false
+
+volumes:
+  input:
+  output:
+  logs:
+
+# Network configuration
+networks:
+  default:
+    name: 3dfigurine-network
+    driver: bridge

@@ -1,0 +1,14 @@
+# Docker ignore file for shared base image
+input/
+output/
+logs/
+.git/
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
