@@ -6,6 +6,7 @@ Provides dynamic engine selection and initialization.
 from typing import Optional, Type, Dict, List
 from engines.base_engine import Engine, EngineConfig
 from engines.trellis_v2 import TRELLIS2Engine
+from engines.meshroom_sfm import MeshroomEngine
 from utils.logger import get_logger
 
 logger = get_logger()
@@ -14,7 +15,7 @@ logger = get_logger()
 # Registry of available engines
 ENGINE_REGISTRY: Dict[str, Type[Engine]] = {
     "trellis": TRELLIS2Engine,
-    # "meshroom": MeshroomEngine,  # Phase 2b
+    "meshroom": MeshroomEngine,
     # "instantsplat": InstantSplatEngine,  # Future
     # "colmap": COLMAPEngine,  # Future
 }

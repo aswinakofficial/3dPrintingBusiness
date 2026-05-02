@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Validation script for Phase 2a TRELLIS.2 Engine implementation.
-Checks code structure, imports, and basic functionality without running inference.
+Validation script for Phase 2a & 2b engine implementations.
+Checks code structure, imports, and basic functionality without requiring model dependencies.
 """
 
 import sys
@@ -90,10 +90,25 @@ def validate_phase2a():
             "classes": [],
             "functions": ["get_available_engines", "load_engine"]
         }),
+        ("engines/meshroom_sfm.py", {
+            "classes": ["MeshroomEngine"],
+            "methods": {
+                "MeshroomEngine": [
+                    "__init__",
+                    "validate_prerequisites",
+                    "_find_meshroom",
+                    "preprocess",
+                    "infer",
+                    "_run_meshroom_pipeline",
+                    "_find_output_mesh",
+                    "postprocess",
+                ]
+            }
+        }),
     ]
     
     print("=" * 70)
-    print("PHASE 2a VALIDATION REPORT")
+    print("PHASE 2a & 2b VALIDATION REPORT")
     print("=" * 70)
     print()
     
