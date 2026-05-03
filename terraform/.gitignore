@@ -1,0 +1,30 @@
+# Terraform state files
+*.tfstate
+*.tfstate.*
+.terraform/*
+.terraform.lock.hcl
+
+# Local overrides
+terraform.tfvars.local
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Cached plugins
+.terraform/plugins
+
+# Rendered templates
+*.rendered
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Credentials (never commit these)
+.env
+*.pem
+*.key
+*.pub
