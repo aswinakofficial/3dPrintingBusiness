@@ -2,12 +2,21 @@
 
 ## Executive Summary
 
-This project now supports **both** Infrastructure-as-Code approaches:
+**STATUS: ARM Templates Deprecated ✅**
 
-- **ARM Templates** (`azure/`) - Azure-native, production-ready
-- **Terraform** (`terraform/`) - Multi-cloud capable, team-friendly
+This project uses **Terraform** as the official Infrastructure-as-Code solution:
 
-**Recommendation:** Use Terraform for new projects, maintain ARM templates for Azure-only scenarios.
+- **Terraform** (`terraform/`) - ✅ **ACTIVE** - Multi-cloud capable, team-friendly, production-ready
+- **ARM Templates** (`azure/`) - ⚠️ **DEPRECATED** - Removed from repository (reference only below)
+
+**Why?** Terraform scored 48/50 vs ARM's 27/50 on architecture evaluation. Terraform provides superior:
+- Team collaboration (HCL vs JSON)
+- State management  
+- Plan/apply workflow
+- Multi-cloud support (avoid vendor lock-in)
+- Error handling and debugging
+
+**Recommendation:** Use Terraform exclusively. This document is kept for historical reference only.
 
 ---
 

@@ -9,7 +9,7 @@ This comprehensive guide details the Ansible configuration management implementa
 ### Multi-Layer Deployment Stack
 
 ```
-├── Infrastructure as Code (Terraform or ARM templates)
+├── Infrastructure as Code (Terraform) ← Recommended & Only Option
 │   └── Provisions Azure VMs with CUDA, GPU support
 │
 ├── Configuration Management (Ansible) ← YOU ARE HERE
