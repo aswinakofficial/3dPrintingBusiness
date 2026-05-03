@@ -17,14 +17,14 @@ resource "azurerm_resource_group" "main" {
 
 # Storage Account
 resource "azurerm_storage_account" "main" {
-  name                     = "st${replace(var.project_name, "-", "")}${var.environment}"
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
-  account_tier             = "Premium"
-  account_replication_type = "LRS"
-  access_tier              = var.storage_access_tier
+  name                       = "st${replace(var.project_name, "-", "")}${var.environment}"
+  resource_group_name        = azurerm_resource_group.main.name
+  location                   = azurerm_resource_group.main.location
+  account_tier               = "Premium"
+  account_replication_type   = "LRS"
+  access_tier                = var.storage_access_tier
   https_traffic_only_enabled = true
-  min_tls_version          = "TLS1_2"
+  min_tls_version            = "TLS1_2"
 
   tags = var.tags
 }
@@ -243,7 +243,7 @@ resource "azurerm_linux_virtual_machine" "main" {
 
   os_disk {
     caching              = "ReadWrite"
-    storage_account_type = "Premium_SSD"
+    storage_account_type = "Premium_LRS"
     disk_size_gb         = 256
   }
 
@@ -256,27 +256,23 @@ resource "azurerm_linux_virtual_machine" "main" {
   }
 }
 
-# VM Run Command for Setup Script
-resource "azurerm_virtual_machine_run_command" "setup" {
-  name               = "vm-setup"
-  location           = azurerm_resource_group.main.location
-  virtual_machine_id = azurerm_linux_virtual_machine.main.id
+# NOTE: VM setup script (vm-setup.sh) should be run manually after VM deployment
+# or integrated via custom script extension. For now, see post-deployment steps in README.tf
 
-  script = file("${path.module}/../azure/vm-setup.sh")
+# Once VM is running, connect via SSH and run:
+# chmod +x vm-setup.sh && ./vm-setup.sh
+# Or use Azure CLI: az vm run-command invoke --resource-group <rg> --name <vm> --command-id RunShellScript --scripts @vm-setup.sh
 
-  tags = var.tags
-}
-
-# Module for monitoring and alerting (optional enhancement)
+# Monitor Action Group (optional - for email alerts)
 resource "azurerm_monitor_action_group" "main" {
   name                = "ag-${var.project_name}-${var.environment}"
   resource_group_name = azurerm_resource_group.main.name
-  short_name          = "3dfigurine"
+  short_name          = "3dfig"
 
   tags = var.tags
 }
 
-# Metric Alert for CPU
+# Metric Alert for CPU Utilization
 resource "azurerm_monitor_metric_alert" "cpu" {
   name                = "alert-cpu-${var.environment}"
   resource_group_name = azurerm_resource_group.main.name
@@ -285,11 +281,14 @@ resource "azurerm_monitor_metric_alert" "cpu" {
   severity            = 2
   frequency           = "PT1M"
   window_size         = "PT5M"
-  metric_name         = "Percentage CPU"
-  operator            = "GreaterThan"
-  threshold           = 80
-  aggregation         = "Average"
-  namespace           = "Microsoft.Compute/virtualMachines"
+
+  criteria {
+    metric_name       = "Percentage CPU"
+    metric_namespace  = "Microsoft.Compute/virtualMachines"
+    operator          = "GreaterThan"
+    threshold         = 80
+    aggregation       = "Average"
+  }
 
   action {
     action_group_id = azurerm_monitor_action_group.main.id
