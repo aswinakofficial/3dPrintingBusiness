@@ -1,0 +1,125 @@
+---
+# Configure 3D Figurine Lab application environment
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: azureuser
+    group: docker
+    mode: '0755'
+  loop: "{{ data_volumes | dict2items | map(attribute='value') | list }}"
+
+- name: Create docker-compose directory
+  file:
+    path: /opt/3dfigurine
+    state: directory
+    owner: azureuser
+    group: docker
+    mode: '0755'
+
+- name: Copy docker-compose.yml
+  copy:
+    src: docker-compose.yml
+    dest: /opt/3dfigurine/docker-compose.yml
+    owner: azureuser
+    group: docker
+    mode: '0644'
+  notify: restart docker services
+
+- name: Create .env file for docker-compose
+  template:
+    src: .env.j2
+    dest: /opt/3dfigurine/.env
+    owner: azureuser
+    group: docker
+    mode: '0600'
+
+- name: Pull required Docker images
+  shell: |
+    export DOCKER_CONTENT_TRUST=1
+    docker-compose -f /opt/3dfigurine/docker-compose.yml pull
+  environment:
+    PATH: "{{ ansible_env.PATH }}"
+  become: yes
+  become_user: azureuser
+  register: pull_result
+  changed_when: "'Pulling' in pull_result.stdout"
+
+- name: Create systemd service for TRELLIS.2
+  template:
+    src: 3dfigurine-trellis.service.j2
+    dest: /etc/systemd/system/3dfigurine-trellis.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: enable_trellis
+  notify: reload systemd daemon
+
+- name: Create systemd service for Meshroom
+  template:
+    src: 3dfigurine-meshroom.service.j2
+    dest: /etc/systemd/system/3dfigurine-meshroom.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: enable_meshroom
+  notify: reload systemd daemon
+
+- name: Enable TRELLIS.2 service
+  systemd:
+    name: 3dfigurine-trellis
+    enabled: yes
+    daemon_reload: yes
+  when: enable_trellis
+
+- name: Enable Meshroom service
+  systemd:
+    name: 3dfigurine-meshroom
+    enabled: yes
+    daemon_reload: yes
+  when: enable_meshroom
+
+- name: Create backup script
+  template:
+    src: backup.sh.j2
+    dest: /usr/local/bin/3dfigurine-backup
+    owner: root
+    group: root
+    mode: '0755'
+  when: enable_backups
+
+- name: Schedule backup via cron
+  cron:
+    name: "3D Figurine Lab backup"
+    minute: "{{ backup_schedule.split()[0] }}"
+    hour: "{{ backup_schedule.split()[1] }}"
+    job: /usr/local/bin/3dfigurine-backup
+    user: root
+  when: enable_backups
+
+- name: Create health check script
+  template:
+    src: healthcheck.sh.j2
+    dest: /usr/local/bin/3dfigurine-healthcheck
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create log rotation config
+  template:
+    src: 3dfigurine.logrotate.j2
+    dest: /etc/logrotate.d/3dfigurine
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Output application status
+  debug:
+    msg: |
+      3D Figurine Lab Application Configuration Complete
+      Environment: {{ environment }}
+      TRELLIS.2 enabled: {{ enable_trellis }}
+      Meshroom enabled: {{ enable_meshroom }}
+      GPU devices: {{ cuda_visible_devices }}
+      Data volumes configured at {{ data_volumes | length }} locations

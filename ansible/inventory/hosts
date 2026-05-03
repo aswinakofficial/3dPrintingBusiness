@@ -1,0 +1,37 @@
+# Ansible Inventory for 3D Figurine Lab
+# Usage: ansible-playbook -i inventory/hosts playbooks/deploy.yml
+
+[all:vars]
+# Common variables for all hosts
+ansible_connection = ssh
+ansible_user = azureuser
+ansible_become = yes
+ansible_become_method = sudo
+
+[prod]
+# Production environment VM
+# Update IP address after Terraform/ARM deployment
+3dfigurine-prod ansible_host=<PROD_IP> environment=prod
+
+[staging]
+# Staging environment VM
+3dfigurine-staging ansible_host=<STAGING_IP> environment=staging
+
+[dev]
+# Development environment VM
+3dfigurine-dev ansible_host=<DEV_IP> environment=dev
+
+# Group all 3D Figurine Lab VMs
+[3dfigurine:children]
+prod
+staging
+dev
+
+# Group for VM configuration
+[3dfigurine:vars]
+docker_version = "latest"
+docker_compose_version = "2.20.0"
+nvidia_docker_version = "2.14.0"
+cuda_version = "12.4"
+application_user = azureuser
+application_home = /home/azureuser

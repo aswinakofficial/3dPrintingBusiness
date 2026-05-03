@@ -1,0 +1,12 @@
+---
+# Handlers for monitoring role
+
+- name: restart journald
+  systemd:
+    name: systemd-journald
+    state: restarted
+
+- name: restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted

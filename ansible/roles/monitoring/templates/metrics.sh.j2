@@ -1,0 +1,49 @@
+#!/bin/bash
+# Metrics collection script for 3D Figurine Lab
+
+METRICS_DIR="/var/log/3dfigurine/metrics"
+mkdir -p "$METRICS_DIR"
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+METRICS_FILE="$METRICS_DIR/metrics_${TIMESTAMP}.json"
+
+{
+  echo "{"
+  echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+  echo "  \"environment\": \"{{ environment }}\","
+  
+  # CPU metrics
+  echo "  \"cpu\": {"
+  echo "    \"usage_percent\": $(top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | sed 's/%.*/%/')"
+  echo "  },"
+  
+  # Memory metrics
+  echo "  \"memory\": {"
+  MEMORY_INFO=$(free | grep Mem)
+  echo "    \"total_mb\": $(echo $MEMORY_INFO | awk '{print $2 / 1024}'),"
+  echo "    \"used_mb\": $(echo $MEMORY_INFO | awk '{print $3 / 1024}'),"
+  echo "    \"free_mb\": $(echo $MEMORY_INFO | awk '{print $4 / 1024}')"
+  echo "  },"
+  
+  # GPU metrics
+  echo "  \"gpu\": {"
+  if command -v nvidia-smi &> /dev/null; then
+    GPU_UTIL=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits | tr '\n' ',' | sed 's/,$//')
+    echo "    \"utilization_percent\": [$GPU_UTIL],"
+    
+    GPU_MEM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | tr '\n' ',' | sed 's/,$//')
+    echo "    \"memory_used_mb\": [$GPU_MEM]"
+  echo "  },"
+  fi
+  
+  # Docker metrics
+  echo "  \"containers\": {"
+  echo "    \"count\": $(docker ps --quiet | wc -l),"
+  echo "    \"total_count\": $(docker ps --all --quiet | wc -l)"
+  echo "  }"
+  
+  echo "}"
+} | tee "$METRICS_FILE" >> /var/log/3dfigurine/metrics.log
+
+# Keep only last 1000 metrics files
+find "$METRICS_DIR" -type f -name "metrics_*.json" | sort -r | tail -n +1001 | xargs rm -f 2>/dev/null || true

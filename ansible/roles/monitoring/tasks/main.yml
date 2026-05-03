@@ -1,0 +1,94 @@
+---
+# Setup monitoring and logging for 3D Figurine Lab
+
+- name: Install monitoring tools
+  apt:
+    name:
+      - htop
+      - iotop
+      - nethogs
+      - systemd-container  # journalctl improvements
+      - logwatch
+    state: present
+
+- name: Configure journald for persistent logging
+  lineinfile:
+    path: /etc/systemd/journald.conf
+    regexp: "^#?{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: "Storage", value: "persistent" }
+    - { key: "Compress", value: "yes" }
+    - { key: "SystemMaxUse", value: "500M" }
+    - { key: "RuntimeMaxUse", value: "100M" }
+    - { key: "ForwardToSyslog", value: "no" }
+  notify: restart journald
+
+- name: Create monitoring scripts directory
+  file:
+    path: /opt/monitoring
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy system monitoring script
+  template:
+    src: system-monitor.sh.j2
+    dest: /usr/local/bin/3dfigurine-monitor
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy GPU monitoring script
+  template:
+    src: gpu-monitor.sh.j2
+    dest: /usr/local/bin/3dfigurine-gpu-monitor
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create metrics collection script
+  template:
+    src: metrics.sh.j2
+    dest: /usr/local/bin/3dfigurine-metrics
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Schedule metrics collection via cron
+  cron:
+    name: "3D Figurine Lab metrics collection"
+    minute: "*/5"
+    job: "/usr/local/bin/3dfigurine-metrics >> /var/log/3dfigurine-metrics.log 2>&1"
+    user: root
+
+- name: Create alert rules
+  template:
+    src: alert-rules.yml.j2
+    dest: /etc/3dfigurine/alert-rules.yml
+    owner: root
+    group: root
+    mode: '0644'
+  when: enable_monitoring
+
+- name: Setup log aggregation template
+  template:
+    src: log-aggregation.conf.j2
+    dest: /etc/rsyslog.d/30-3dfigurine.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart rsyslog
+
+- name: Enable application log viewing
+  debug:
+    msg: |
+      Monitoring configured successfully
+      
+      View logs with:
+      - journalctl -u 3dfigurine-trellis -f
+      - journalctl -u 3dfigurine-meshroom -f
+      - /usr/local/bin/3dfigurine-monitor (system monitor)
+      - /usr/local/bin/3dfigurine-gpu-monitor (GPU monitor)
+      - /usr/local/bin/3dfigurine-metrics (performance metrics)

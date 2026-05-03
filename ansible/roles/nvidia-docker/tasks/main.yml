@@ -1,0 +1,63 @@
+---
+# Install NVIDIA Docker runtime for GPU support
+
+- name: Add NVIDIA GPG key
+  apt_key:
+    url: https://nvidia.github.io/nvidia-docker/gpgkey
+    state: present
+
+- name: Add NVIDIA Docker repository
+  shell: |
+    distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+    curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+    tee /etc/apt/sources.list.d/nvidia-docker.list
+  args:
+    creates: /etc/apt/sources.list.d/nvidia-docker.list
+
+- name: Update apt cache for NVIDIA packages
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install NVIDIA Docker runtime
+  apt:
+    name:
+      - nvidia-docker2
+      - nvidia-container-toolkit
+    state: present
+  notify: restart docker
+
+- name: Configure Docker daemon for NVIDIA
+  template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    backup: yes
+  notify: restart docker
+
+- name: Wait for Docker to be ready
+  pause:
+    seconds: 5
+
+- name: Test NVIDIA Docker with CUDA
+  shell: docker run --rm --gpus all nvidia/cuda:{{ cuda_version }}.1-base nvidia-smi
+  register: nvidia_smi_output
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: nvidia_smi_output.rc == 0
+
+- name: Display GPU information
+  debug:
+    var: nvidia_smi_output.stdout_lines
+
+- name: Verify GPU count
+  shell: docker run --rm --gpus all nvidia/cuda:{{ cuda_version }}.1-base nvidia-smi -L | wc -l
+  register: gpu_count_output
+  changed_when: false
+
+- name: GPU count validation
+  assert:
+    that:
+      - gpu_count_output.stdout | int >= gpu_count
+    fail_msg: "Expected {{ gpu_count }} GPU(s), found {{ gpu_count_output.stdout }}"
+    success_msg: "GPU validation passed: {{ gpu_count_output.stdout }} GPU(s) available"

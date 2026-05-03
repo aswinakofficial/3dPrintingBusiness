@@ -1,0 +1,29 @@
+# Log aggregation configuration for 3D Figurine Lab
+
+# Capture application logs
+:programname, isequal, "3dfigurine-"
+{
+  action(type="omfile" file="{{ data_volumes.logs }}/3dfigurine.log")
+  action(type="omfile" file="{{ data_volumes.logs }}/3dfigurine-{{ environment }}.log")
+  stop
+}
+
+# Capture Docker logs
+:programname, startswith, "docker"
+{
+  action(type="omfile" file="{{ data_volumes.logs }}/docker.log")
+  stop
+}
+
+# Capture systemd logs
+:programname, startswith, "systemd"
+{
+  action(type="omfile" file="{{ data_volumes.logs }}/systemd.log")
+  stop
+}
+
+# Fallback for other logs
+*.*
+{
+  action(type="omfile" file="{{ data_volumes.logs }}/system.log")
+}

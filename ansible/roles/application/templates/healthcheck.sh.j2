@@ -1,0 +1,62 @@
+#!/bin/bash
+# Health check script for 3D Figurine Lab
+
+set -e
+
+echo "=== 3D Figurine Lab Health Check ==="
+echo "Environment: {{ environment }}"
+echo "Timestamp: $(date)"
+echo ""
+
+# Check Docker status
+echo "Docker Status:"
+systemctl is-active docker && echo "  ✓ Docker service is running" || echo "  ✗ Docker service is STOPPED"
+docker ps -q | wc -l | xargs echo "  Container count:"
+echo ""
+
+# Check NVIDIA GPU
+echo "GPU Status:"
+if command -v nvidia-smi &> /dev/null; then
+    GPU_COUNT=$(nvidia-smi -L | wc -l)
+    echo "  ✓ NVIDIA GPU detected: $GPU_COUNT GPU(s)"
+    GPU_MEMORY=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{s+=$1} END {print s}')
+    echo "  Available GPU memory: ${GPU_MEMORY} MB"
+else
+    echo "  ✗ NVIDIA GPU tools not found"
+fi
+echo ""
+
+# Check data volumes
+echo "Storage Status:"
+{% for name, path in data_volumes.items() %}
+if [ -d "{{ path }}" ]; then
+    SIZE=$(du -sh "{{ path }}" | cut -f1)
+    echo "  ✓ {{ name }}: {{ path }} ({{ size }})"
+else
+    echo "  ✗ {{ name }}: {{ path }} NOT FOUND"
+fi
+{% endfor %}
+echo ""
+
+# Check TRELLIS.2 service
+{% if enable_trellis %}
+echo "TRELLIS.2 Service:"
+if systemctl is-active --quiet 3dfigurine-trellis; then
+    echo "  ✓ TRELLIS.2 service is running"
+else
+    echo "  ⚠ TRELLIS.2 service is not running"
+fi
+{% endif %}
+
+# Check Meshroom service
+{% if enable_meshroom %}
+echo "Meshroom Service:"
+if systemctl is-active --quiet 3dfigurine-meshroom; then
+    echo "  ✓ Meshroom service is running"
+else
+    echo "  ⚠ Meshroom service is not running"
+fi
+{% endif %}
+
+echo ""
+echo "=== End Health Check ==="

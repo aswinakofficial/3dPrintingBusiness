@@ -114,18 +114,18 @@ output "vm_private_ip_address" {
 output "deployment_summary" {
   description = "Summary of deployed resources"
   value = {
-    project_name          = var.project_name
-    environment           = var.environment
-    location              = var.location
-    resource_group        = azurerm_resource_group.main.name
-    storage_account       = azurerm_storage_account.main.name
-    container_registry    = azurerm_container_registry.main.name
-    key_vault             = azurerm_key_vault.main.name
-    log_analytics         = azurerm_log_analytics_workspace.main.name
-    vm_name               = azurerm_linux_virtual_machine.main.name
-    vm_size               = var.vm_size
-    vm_public_ip          = azurerm_public_ip.main.ip_address
-    vm_fqdn               = azurerm_public_ip.main.fqdn
-    acr_login_server      = azurerm_container_registry.main.login_server
+    project_name       = var.project_name
+    environment        = var.environment
+    location           = var.location
+    resource_group     = azurerm_resource_group.main.name
+    storage_account    = azurerm_storage_account.main.name
+    container_registry = azurerm_container_registry.main.name
+    key_vault          = azurerm_key_vault.main.name
+    log_analytics      = azurerm_log_analytics_workspace.main.name
+    vm_name            = azurerm_linux_virtual_machine.main.name
+    vm_size            = var.vm_size
+    vm_public_ip       = azurerm_public_ip.main.ip_address
+    vm_fqdn            = azurerm_public_ip.main.fqdn
+    acr_login_server   = azurerm_container_registry.main.login_server
   }
 }

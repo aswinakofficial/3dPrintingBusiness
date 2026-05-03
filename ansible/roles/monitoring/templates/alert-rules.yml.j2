@@ -1,0 +1,50 @@
+---
+# Alert rules for 3D Figurine Lab
+
+alerts:
+  - name: HighCPUUsage
+    condition: "cpu_usage > 80"
+    severity: warning
+    action: "log"
+    message: "CPU usage is above 80%"
+
+  - name: HighMemoryUsage
+    condition: "memory_usage > 85"
+    severity: warning
+    action: "log"
+    message: "Memory usage is above 85%"
+
+  - name: HighGPUUtilization
+    condition: "gpu_util > 95"
+    severity: info
+    action: "log"
+    message: "GPU utilization is very high"
+
+  - name: HighGPUTemperature
+    condition: "gpu_temp > 85"
+    severity: critical
+    action: "alert"
+    message: "GPU temperature is critical (>85°C)"
+
+  - name: DiskSpaceWarning
+    condition: "disk_usage > 80"
+    severity: warning
+    action: "log"
+    message: "Disk usage is above 80%"
+
+  - name: ContainerCrashed
+    condition: "container_exit_code != 0"
+    severity: critical
+    action: "alert"
+    message: "Container has crashed, attempting restart"
+
+  - name: GPUMemoryExhausted
+    condition: "gpu_memory_free < 1000"
+    severity: critical
+    action: "alert"
+    message: "GPU memory is nearly exhausted"
+
+log_levels:
+  info: "{{ data_volumes.logs }}/info.log"
+  warning: "{{ data_volumes.logs }}/warning.log"
+  critical: "{{ data_volumes.logs }}/critical.log"

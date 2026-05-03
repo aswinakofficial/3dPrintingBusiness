@@ -1,0 +1,127 @@
+---
+# Main deployment playbook for 3D Figurine Lab
+# Configures Azure VMs with Docker, GPU support, and application
+
+- name: Deploy 3D Figurine Lab on Azure VMs
+  hosts: 3dfigurine
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ========================================
+          3D Figurine Lab Ansible Deployment
+          ========================================
+          
+          Host: {{ inventory_hostname }}
+          Environment: {{ environment }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Python: {{ ansible_python_version }}
+          
+          Deployment plan:
+            - Install Docker and Docker Compose
+            - Install NVIDIA Docker runtime
+            - Configure application environment
+            - Setup monitoring and logging
+
+    - name: Update package manager cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      become: yes
+
+    - name: Install required tools
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - nano
+          - vim
+          - git-lfs
+        state: present
+      become: yes
+
+  roles:
+    - role: docker-install
+      tags: docker
+
+    - role: nvidia-docker
+      tags: gpu
+
+    - role: application
+      tags: application
+
+    - role: monitoring
+      tags: monitoring
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ========================================
+          Deployment Complete!
+          ========================================
+          
+          Next steps:
+          1. Start services:
+             sudo systemctl start 3dfigurine-trellis
+             sudo systemctl start 3dfigurine-meshroom
+          
+          2. Verify services:
+             sudo systemctl status 3dfigurine-trellis
+             sudo systemctl status 3dfigurine-meshroom
+          
+          3. Check logs:
+             journalctl -u 3dfigurine-trellis -f
+             journalctl -u 3dfigurine-meshroom -f
+          
+          4. Run health check:
+             /usr/local/bin/3dfigurine-healthcheck
+          
+          5. Monitor system:
+             /usr/local/bin/3dfigurine-monitor
+             /usr/local/bin/3dfigurine-gpu-monitor
+          
+          Configuration details:
+            Environment: {{ environment }}
+            Docker registry: {{ docker_registry }}
+            GPU devices: {{ cuda_visible_devices }}
+            Data volumes:
+          {% for name, path in data_volumes.items() %}
+              - {{ name }}: {{ path }}
+          {% endfor %}
+
+    - name: Verify Docker and GPU
+      block:
+        - name: Test Docker
+          shell: docker run --rm hello-world
+          register: docker_test
+          changed_when: false
+
+        - name: Test GPU
+          shell: docker run --rm --gpus all nvidia/cuda:{{ cuda_version }}.1-base nvidia-smi
+          register: gpu_test
+          changed_when: false
+
+        - name: Display verification results
+          debug:
+            msg: |
+              Docker and GPU verification successful!
+              
+              Docker version: {{ docker_version_output.stdout }}
+              GPU output: SUCCESS
+              Environment ready for 3D processing
+
+      rescue:
+        - name: Report verification failure
+          debug:
+            msg: |
+              Warning: Some verifications failed.
+              Please check:
+              - Docker installation: docker --version
+              - GPU access: docker run --rm --gpus all nvidia/cuda:{{ cuda_version }}.1-base nvidia-smi
+              - SSH connection and permissions

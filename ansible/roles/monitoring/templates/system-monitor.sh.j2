@@ -1,0 +1,25 @@
+#!/bin/bash
+# System monitoring script for 3D Figurine Lab
+
+echo "=== System Status ($(date)) ==="
+echo ""
+
+echo "CPU Usage:"
+top -bn1 | grep "Cpu(s)" | awk '{print "  Current: " $2}'
+echo ""
+
+echo "Memory Usage:"
+free -h | tail -2 | awk '{print "  " $1 ": " $2 " / " $4 " free"}'
+echo ""
+
+echo "Disk Usage:"
+df -h {{ data_volumes | dict2items | map(attribute='value') | list | join(' ') }} | awk 'NR>1 {print "  " $6 ": " $5 " used"}'
+echo ""
+
+echo "Network Connections:"
+netstat -ant | grep ESTABLISHED | wc -l | xargs echo "  Total connections:"
+echo ""
+
+echo "Running Containers:"
+docker ps --format "table {{.Names}}\t{{.Status}}"
+echo ""

@@ -1,0 +1,53 @@
+# Staging environment variables
+---
+environment: staging
+docker_registry: myregistry.azurecr.io
+container_trellis_image: "{{ docker_registry }}/3dfigurine-trellis:staging"
+container_meshroom_image: "{{ docker_registry }}/3dfigurine-meshroom:staging"
+
+# Resource limits (staging - somewhat reduced)
+docker_memory_limit: "60g"
+docker_cpus_limit: "24"
+
+# Volume mounts
+data_volumes:
+  input: /opt/3dfigurine/input
+  output: /opt/3dfigurine/output
+  logs: /opt/3dfigurine/logs
+  models_cache: /opt/3dfigurine/models
+
+# Services to enable
+enable_trellis: yes
+enable_meshroom: yes
+enable_monitoring: yes
+
+# Auto-restart policy
+docker_restart_policy: always
+docker_restart_max_retries: 3
+
+# Logging configuration
+logging_driver: json-file
+logging_max_file: "50m"
+logging_max_files: "5"
+
+# GPU configuration
+gpu_count: 2
+cuda_visible_devices: "0,1"
+
+# Performance tuning
+enable_gpu_persistence: yes
+enable_gpu_clock_control: yes
+
+# Backup configuration
+enable_backups: yes
+backup_retention_days: 7
+backup_schedule: "0 3 * * 0"  # 3 AM Sunday
+
+# Security
+ssh_hardening: yes
+firewall_enabled: yes
+fail2ban_enabled: yes
+
+# Update checks more frequently
+check_for_updates: yes
+auto_update: no  # Manual review before staging update

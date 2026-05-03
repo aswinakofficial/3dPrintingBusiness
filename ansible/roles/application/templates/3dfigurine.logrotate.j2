@@ -1,0 +1,22 @@
+{{ data_volumes.logs }}/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 0640 azureuser docker
+    sharedscripts
+    postrotate
+        /usr/bin/docker-compose -f /opt/3dfigurine/docker-compose.yml restart >> /dev/null 2>&1 || true
+    endscript
+}
+
+{{ data_volumes.output }}/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 0640 azureuser docker
+    sharedscripts
+}

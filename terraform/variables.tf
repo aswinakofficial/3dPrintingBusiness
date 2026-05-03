@@ -101,13 +101,13 @@ variable "enable_auto_scaling" {
 variable "container_images" {
   description = "Container image URIs"
   type = object({
-    trellis   = string
-    meshroom  = string
+    trellis  = string
+    meshroom = string
   })
 
   default = {
-    trellis   = "mcr.microsoft.com/hello-world:latest"
-    meshroom  = "mcr.microsoft.com/hello-world:latest"
+    trellis  = "mcr.microsoft.com/hello-world:latest"
+    meshroom = "mcr.microsoft.com/hello-world:latest"
   }
 }
 
@@ -138,7 +138,7 @@ variable "allowed_ssh_ips" {
   description = "CIDR blocks allowed for SSH access"
   type        = list(string)
 
-  default = ["0.0.0.0/0"]  # Change to restrict SSH access
+  default = ["0.0.0.0/0"] # Change to restrict SSH access
 }
 
 variable "vnet_address_space" {
