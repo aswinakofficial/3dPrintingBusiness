@@ -121,6 +121,56 @@ class JobResult:
 # ---------- Public API (used by CLI today, HTTP wrapper tomorrow) ----------
 
 
+# Per-engine input requirements, used by validate_input().
+ENGINE_IMAGE_LIMITS = {
+    "trellis": (1, 4),
+    "meshroom": (10, 50),
+}
+SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def validate_input(input_path: Path, engine: str) -> list[Path]:
+    """Validate inputs locally with PIL. No Azure calls.
+
+    Raises ValueError / FileNotFoundError on issues so the CLI can exit
+    before paying for an ACI run. Returns the list of valid image paths.
+    """
+    from PIL import Image, UnidentifiedImageError  # lazy import
+
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input path does not exist: {input_path}")
+
+    if input_path.is_file():
+        candidates = [input_path]
+    else:
+        candidates = sorted(
+            p
+            for p in input_path.rglob("*")
+            if p.is_file() and p.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES
+        )
+    if not candidates:
+        raise ValueError(f"No supported images found under {input_path}")
+
+    valid: list[Path] = []
+    for path in candidates:
+        if path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES:
+            raise ValueError(f"Unsupported image extension: {path}")
+        try:
+            with Image.open(path) as im:
+                im.verify()
+        except (UnidentifiedImageError, OSError) as e:
+            raise ValueError(f"Could not open as image: {path} ({e})") from e
+        valid.append(path)
+
+    lo, hi = ENGINE_IMAGE_LIMITS[engine]
+    if len(valid) < lo or len(valid) > hi:
+        raise ValueError(
+            f"Engine {engine!r} expects between {lo} and {hi} images; got {len(valid)}"
+        )
+    logger.info(f"Validated {len(valid)} image(s) for engine={engine}")
+    return valid
+
+
 def submit_job(
     *,
     engine: str,
@@ -130,12 +180,16 @@ def submit_job(
     output_dir: Path = Path("output"),
     skip_download: bool = False,
     cleanup: bool = False,
+    max_runtime_minutes: int = 30,
     azure: Optional[AzureConfig] = None,
 ) -> JobResult:
     """Upload, run, and (optionally) download a 3D-processing job on Azure ACI.
 
     Reusable core. The CLI wraps it; future HTTP/event triggers (Azure
     Function, Container Apps Job) can call it directly without rewriting.
+
+    `max_runtime_minutes` caps how long the job is allowed to run. If exceeded,
+    the container group is force-deleted and the call returns success=False.
     """
     if engine not in SUPPORTED_ENGINES:
         raise ValueError(f"Unknown engine: {engine}. Choose from {SUPPORTED_ENGINES}")
@@ -143,24 +197,34 @@ def submit_job(
         raise ValueError(
             f"Unsupported GPU SKU: {gpu_sku}. Choose from {SUPPORTED_GPU_SKUS}"
         )
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input path does not exist: {input_path}")
+    if max_runtime_minutes <= 0:
+        raise ValueError("max_runtime_minutes must be positive")
+
+    # Local validation before paying for an ACI run.
+    validate_input(input_path, engine)
 
     azure = azure or AzureConfig.from_env()
     runner = ACIJobRunner(azure)
     job_id = job_id or f"{engine}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
-    logger.info(f"Starting job: {job_id}")
+    logger.info(f"Starting job: {job_id} (max runtime {max_runtime_minutes} min)")
     runner.upload_files(input_path)
     runner.create_job(job_id, engine, gpu_sku=gpu_sku)
-    success = runner.monitor_job(job_id)
+    success = runner.monitor_job(job_id, max_wait=max_runtime_minutes * 60)
 
     exit_code = 0 if success else 1
     out_dir: Optional[Path] = None
     if success and not skip_download:
         out_dir = runner.download_output(output_dir)
 
-    if cleanup:
+    # On failure, capture container logs locally before the container group
+    # gets deleted -- otherwise the failure reason is gone forever.
+    if not success:
+        runner.dump_logs(job_id, output_dir / job_id / "container.log")
+
+    # Cleanup: always tear down on explicit --cleanup, and additionally tear
+    # down on failure to avoid clutter (logs are already saved above).
+    if cleanup or not success:
         runner.cleanup(job_id)
 
     return JobResult(
@@ -254,8 +318,10 @@ class ACIJobRunner:
         logger.info(f"ACI job created: {job_id}")
 
     def monitor_job(
-        self, job_id: str, poll_interval: int = 10, max_wait: int = 3600
+        self, job_id: str, poll_interval: int = 10, max_wait: int = 1800
     ) -> bool:
+        """Poll until the container reaches a terminal state or max_wait
+        elapses. Returns True on exit_code == 0, False otherwise."""
         start = time.time()
         while time.time() - start < max_wait:
             try:
@@ -263,7 +329,8 @@ class ACIJobRunner:
                     self.azure.resource_group, job_id
                 )
                 state = grp.containers[0].instance_view.current_state.state
-                logger.info(f"Job {job_id} state: {state}")
+                elapsed = int(time.time() - start)
+                logger.info(f"Job {job_id} state: {state} ({elapsed}s elapsed)")
                 if state == "Terminated":
                     code = grp.containers[0].instance_view.current_state.exit_code
                     logger.info(f"Job {job_id} exited with code {code}")
@@ -272,7 +339,9 @@ class ACIJobRunner:
             except Exception as e:
                 logger.warning(f"Monitor error: {e}")
                 time.sleep(poll_interval)
-        logger.error(f"Job {job_id} did not finish within {max_wait}s")
+        logger.error(
+            f"Job {job_id} exceeded {max_wait}s runtime cap; container will be deleted"
+        )
         return False
 
     def download_output(
@@ -297,6 +366,19 @@ class ACIJobRunner:
             logger.info(f"Deleted job: {job_id}")
         except Exception as e:
             logger.warning(f"Could not delete job {job_id}: {e}")
+
+    def dump_logs(self, job_id: str, target: Path) -> None:
+        """Save the container's stdout/stderr to a local file. Best-effort:
+        if the container is gone or unreachable, log a warning and continue."""
+        try:
+            log_obj = self.aci_client.containers.list_logs(
+                self.azure.resource_group, job_id, job_id
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(log_obj.content or "")
+            logger.info(f"Saved container logs to {target}")
+        except Exception as e:
+            logger.warning(f"Could not fetch logs for {job_id}: {e}")
 
 
 # ---------- CLI ----------
@@ -344,6 +426,29 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delete container group after job completes",
     )
+    p.add_argument(
+        "--max-runtime-minutes",
+        type=int,
+        default=30,
+        help="Hard cap on job runtime (default: 30). Container is force-deleted on overrun.",
+    )
+    p.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help=(
+            "Sanity-check run: forces --gpu-sku T4, --max-runtime-minutes 5, "
+            "--cleanup. Use this to verify a code change cheaply before "
+            "submitting a full job."
+        ),
+    )
+    p.add_argument(
+        "--validate-only",
+        action="store_true",
+        help=(
+            "Run client-side input validation (PIL, image counts) and exit "
+            "without contacting Azure. Useful before paying for an ACI run."
+        ),
+    )
     p.add_argument("--resource-group", help="Override AZURE_RESOURCE_GROUP")
     p.add_argument("--storage-account", help="Override AZURE_STORAGE_ACCOUNT")
     p.add_argument("--registry", help="Override AZURE_CONTAINER_REGISTRY")
@@ -358,6 +463,28 @@ def main() -> int:
 
     args = _build_parser().parse_args()
 
+    # --validate-only: client-side checks only, no Azure interaction.
+    if args.validate_only:
+        try:
+            validate_input(args.input, args.engine)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Validation failed: {e}", file=sys.stderr)
+            return 2
+        logger.info("Validation passed; no ACI job submitted (--validate-only).")
+        return 0
+
+    # --smoke-test: cheapest-possible run with hard guardrails.
+    gpu_sku = args.gpu_sku
+    max_runtime = args.max_runtime_minutes
+    cleanup = args.cleanup
+    if args.smoke_test:
+        gpu_sku = "T4"
+        max_runtime = min(args.max_runtime_minutes, 5)
+        cleanup = True
+        logger.info(
+            f"Smoke-test mode: gpu={gpu_sku}, max_runtime={max_runtime}min, cleanup=True"
+        )
+
     azure = AzureConfig.from_env(
         subscription_id=args.subscription,
         resource_group=args.resource_group,
@@ -370,10 +497,11 @@ def main() -> int:
             engine=args.engine,
             input_path=args.input,
             job_id=args.job_id,
-            gpu_sku=args.gpu_sku,
+            gpu_sku=gpu_sku,
             output_dir=args.output,
             skip_download=args.skip_download,
-            cleanup=args.cleanup,
+            cleanup=cleanup,
+            max_runtime_minutes=max_runtime,
             azure=azure,
         )
     except (FileNotFoundError, ValueError) as e:

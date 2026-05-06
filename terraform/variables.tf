@@ -87,6 +87,24 @@ variable "azure_files_share_quota_gb" {
   default     = 1024
 }
 
+variable "budget_monthly_usd" {
+  description = "Monthly Azure spend cap (USD). Notifications fire at 50/80/100%."
+  type        = number
+  default     = 50
+}
+
+variable "budget_alert_email" {
+  description = "Email address that receives budget alerts."
+  type        = string
+  default     = "007aswinak007@gmail.com"
+}
+
+variable "budget_start_date" {
+  description = "Budget billing-cycle start date (ISO-8601, must be the first of a month)."
+  type        = string
+  default     = "2026-05-01T00:00:00Z"
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

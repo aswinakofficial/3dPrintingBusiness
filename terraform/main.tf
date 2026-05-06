@@ -160,6 +160,32 @@ resource "azurerm_monitor_action_group" "main" {
   tags = var.tags
 }
 
-# Note: Azure Container Instances are created on-demand via scripts/aci_job_runner.py
-# This Terraform configuration provides the supporting infrastructure (storage, registry, monitoring)
-# while batch job containers are triggered programmatically without persistent VM infrastructure.
+# Note: Azure Container Instances are created on-demand via scripts/run_job.py.
+# This Terraform configuration provides the supporting infrastructure (storage,
+# registry, monitoring) while batch job containers are triggered programmatically
+# without persistent VM infrastructure.
+
+# Monthly budget alert. Triggers email at 50%, 80%, and 100% of the cap so we
+# notice runaway spend long before the Azure credit is exhausted.
+resource "azurerm_consumption_budget_resource_group" "main" {
+  name              = "budget-${var.project_name}-${var.environment}"
+  resource_group_id = azurerm_resource_group.main.id
+
+  amount     = var.budget_monthly_usd
+  time_grain = "Monthly"
+
+  time_period {
+    start_date = var.budget_start_date
+  }
+
+  dynamic "notification" {
+    for_each = [50, 80, 100]
+    content {
+      enabled        = true
+      threshold      = notification.value
+      operator       = "GreaterThan"
+      threshold_type = "Actual"
+      contact_emails = [var.budget_alert_email]
+    }
+  }
+}
