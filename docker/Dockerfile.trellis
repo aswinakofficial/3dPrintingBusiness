@@ -1,28 +1,28 @@
 # TRELLIS.2 Engine Dockerfile
-# Image size: ~8-10GB
-# Base: NVIDIA CUDA 12.4.1 runtime + Ubuntu 22.04
-# Includes: PyTorch 2.6.0, HuggingFace transformers, trimesh
+# Uses Microsoft's official trellis2 package + o_voxel CUDA extension
+# Base: NVIDIA CUDA 12.4.1 *devel* (needed for nvcc to compile o-voxel)
 
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
-# Set metadata
 LABEL maintainer="3D Figurine Lab"
-LABEL description="TRELLIS.2 3D Model Generation Engine"
-LABEL version="1.0"
+LABEL description="TRELLIS.2 3D Model Generation Engine (with trellis2 + o_voxel)"
 
-# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV TZ=UTC
 ENV CUDA_HOME=/usr/local/cuda
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 ENV PATH=${CUDA_HOME}/bin:${PATH}
+# A100=8.0, A10=8.6, H100=9.0 — matches our cloud workload profile (A100)
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
 
-# Install system dependencies
+# System dependencies (build tools + image/3D libs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
+    cmake \
+    ninja-build \
     git \
+    curl \
     wget \
     ca-certificates \
     libgomp1 \
@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxrender1 \
     libxext6 \
+    libjpeg-dev \
     ffmpeg \
     imagemagick \
     python3.10 \
@@ -38,15 +39,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set python3.10 as default
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
 
-# Create working directory
 WORKDIR /app
 
-# Copy project files
-COPY requirements.txt .
+# PyTorch with CUDA 12.4 (must match host CUDA major version)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir \
+    torch==2.6.0 torchvision==0.21.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# TRELLIS.2 basic dependencies (from setup.sh --basic)
+RUN pip install --no-cache-dir \
+    imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja trimesh \
+    transformers tensorboard pandas lpips zstandard kornia timm
+
+RUN pip install --no-cache-dir \
+    git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+
+# Our app's runtime dependencies
+COPY requirements-runtime.txt .
+RUN pip install --no-cache-dir -r requirements-runtime.txt
+
+# Clone TRELLIS.2 repo and install o_voxel CUDA extension + trellis2 package
+RUN git clone --recursive https://github.com/microsoft/TRELLIS.2.git /opt/trellis2-repo
+RUN cd /opt/trellis2-repo && \
+    pip install --no-cache-dir ./o-voxel --no-build-isolation
+# Make trellis2 package importable
+ENV PYTHONPATH=/opt/trellis2-repo:${PYTHONPATH}
+
+# Copy app code last (best cache reuse on iteration)
 COPY config.yaml .
 COPY main.py .
 COPY engines/ ./engines/
@@ -54,18 +77,10 @@ COPY utils/ ./utils/
 COPY scripts/ ./scripts/
 COPY docker/entrypoint-trellis.sh /app/entrypoint.sh
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+RUN mkdir -p /app/input /app/output /app/logs && chmod +x /app/entrypoint.sh
 
-# Create necessary directories
-RUN mkdir -p /app/input /app/output /app/logs
-
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())" || exit 1
+    CMD python3 -c "import torch; assert torch.cuda.is_available()" || exit 1
 
-# Set entrypoint
-RUN chmod +x /app/entrypoint.sh
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["python", "main.py", "--help"]
+CMD ["python3", "main.py", "--help"]

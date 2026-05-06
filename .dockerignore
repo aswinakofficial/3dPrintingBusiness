@@ -57,9 +57,14 @@ README.md
 *.md
 docs/
 
-# Docker files themselves
-docker/
-Dockerfile*
+# Keep Docker build context small, but include the files used by Docker builds
+docker/*
+!docker/Dockerfile.trellis
+!docker/Dockerfile.meshroom
+!docker/entrypoint-trellis.sh
+!docker/entrypoint-meshroom.sh
+!docker/shared/
+!docker/shared/Dockerfile.base
 docker-compose*
 
 # CI/CD
