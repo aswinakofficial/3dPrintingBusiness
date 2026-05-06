@@ -1,9 +1,0 @@
----
-# Handlers for nvidia-docker role
-
-- name: restart docker
-  systemd:
-    name: docker
-    state: restarted
-    daemon_reload: yes
-  listen: "restart docker"
