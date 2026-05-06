@@ -4,9 +4,7 @@ paths:
   logs: ./logs
 
 runtime:
-  local_gpu: false
   cloud_provider: azure
-  cuda_device: 0
 
 engines:
   trellis:

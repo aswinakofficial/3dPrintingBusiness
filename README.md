@@ -1,237 +1,151 @@
-# 3D Figurine Lab – Production Pipeline
+# 3D Figurine Lab — Production Pipeline
 
-Convert customer photos to print-ready 3D figurine STL files using dual AI engines (TRELLIS.2 + Meshroom).
+Convert customer photos to print-ready 3D figurine STL files using two AI engines (TRELLIS.2 + Meshroom). Cloud-only, on-demand: a thin CLI runs on your laptop and submits jobs to Azure Container Instances (ACI). No persistent compute — you pay only while a job runs.
 
 ## Quick Start
 
+You don't need a GPU, CUDA, or Docker installed locally. The CLI client is a small Python package; all heavy work happens inside ACI.
+
 ### Prerequisites
 - Python 3.10+
-- NVIDIA GPU with 24GB+ VRAM (A10, A100 recommended)
-- CUDA 12.4
-- Docker + NVIDIA runtime
-- Azure VM or local GPU machine
+- Azure CLI (`az login` against a subscription with ACI quota)
+- Terraform 1.0+ (only for the one-time infra setup)
 
-### Installation
-
+### Install the client
 ```bash
-# Clone repository
 git clone https://github.com/yourusername/3dPrintingBusiness.git
 cd 3dPrintingBusiness
-
-# Create Python virtual environment
-python3.10 -m venv venv
+python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -r requirements-client.txt
 ```
 
-## Usage
-
-### TRELLIS.2 Engine (Fast, 1-4 images)
-
+### One-time infrastructure
 ```bash
-# Single image
-python main.py --input path/to/photo.jpg \
-               --engine trellis \
-               --output-dir ./output
+cd terraform
+terraform init
+terraform apply -var-file="dev.tfvars"
+cd ..
 
-# Multi-image (best quality with 3-4 complementary angles)
-python main.py --input photo_front.jpg photo_side.jpg photo_back.jpg \
-               --engine trellis \
-               --output-dir ./output
+# Cloud-side build of the runtime images (no local Docker required)
+az acr build --registry acr3dfigurinelabdev --image 3dfigurine-trellis:latest -f docker/Dockerfile.trellis .
+az acr build --registry acr3dfigurinelabdev --image 3dfigurine-meshroom:latest -f docker/Dockerfile.meshroom .
 ```
 
-**Characteristics**:
-- ⚡ Fast: 3-17 seconds per image (depending on GPU)
-- 🎨 Stylized output with textures/PBR materials
-- 📸 Optimal for 1-4 images (multi-view conditioning)
-- 💾 GPU memory: 24GB+ required
-
-### Meshroom Engine (Photogrammetry, 10-50+ images)
-
+### Run a job
 ```bash
-# Process directory with many overlapping photos
-python main.py --input ./photos_directory/ \
-               --engine meshroom \
-               --output-dir ./output
+# Single image with TRELLIS.2 (fast, 1–4 images)
+python scripts/run_job.py --engine trellis --input ./photo.jpg
 
-# Or specify image list
-python main.py --input img_001.jpg img_002.jpg img_003.jpg ... img_050.jpg \
-               --engine meshroom \
-               --output-dir ./output
+# Photogrammetry with Meshroom (10–50 overlapping images)
+python scripts/run_job.py --engine meshroom --input ./photos/
+
+# Cheaper GPU when iterating
+python scripts/run_job.py --engine trellis --input ./photo.jpg --gpu-sku T4
 ```
 
-**Characteristics**:
-- 🔍 Photogrammetry-based (Structure-from-Motion)
-- 📷 Requires 10-50+ overlapping images (360° around subject)
-- ⏱️ Slower: 5-30 minutes depending on image count
-- 🎯 Captures fine geometric detail
-- GPU optional (beneficial for MVS/dense matching)
-
-### List Available Engines
-
-```bash
-python main.py --list-engines
-```
+The CLI uploads inputs to blob storage, spins up an ACI container with GPU, streams progress, downloads the STL into `./output/`, and (with `--cleanup`) deletes the container group when done.
 
 ## Output
 
-Both engines produce:
-- **Final output**: `output/final/{input_name}_final.stl` (print-ready, binary format)
-- **Intermediate files**: `output/{engine}/{input_name}_raw.*` (for debugging)
-- **Logs**: `logs/pipeline_*.log` (JSON structured logs)
+Each job produces:
+- `output/<job-id>/final_mesh.glb` — the generated mesh
+- `output/<job-id>/final_mesh.stl` — print-ready STL (binary)
+- `output/<job-id>/metadata.json` — engine, mesh stats, post-processing settings
+- `logs/pipeline_*.log` — JSON-structured logs
 
 ## Configuration
 
-Edit `config.yaml` to customize:
-- Engine selection (enabled/disabled per engine)
-- Mesh repair settings (hole size, manifold validation)
+Edit `config.yaml` to customize what runs **inside the container**:
+- Engine settings (resolution, max images, model IDs)
+- Mesh repair (hole size, manifold validation)
 - Hollowing parameters (wall thickness, voxel resolution)
-- Support generation (angle threshold, diameter)
-- Print profiles (figurine sizes: standard/detailed/miniature)
+- Support generation (overhang angle, diameter)
+- Print profiles (figurine sizes)
 
-## Directory Structure
+The CLI client (`scripts/run_job.py`) does not read `config.yaml`; it only orchestrates. Per-run knobs live as CLI flags (`--gpu-sku`, `--cleanup`, etc.).
+
+## Repository layout
 
 ```
 3dPrintingBusiness/
-├── main.py                 # CLI entry point
-├── config.yaml             # Configuration (engines, post-processing)
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
-
-├── input/                  # Place input images here
-├── output/                 # Generated meshes and STLs
-│   ├── trellis/
-│   ├── meshroom/
-│   └── final/
-├── logs/                   # Pipeline execution logs
-
+├── scripts/
+│   └── run_job.py              # ⭐ User-facing CLI — what you run
+├── main.py                     # Pipeline orchestrator (runs INSIDE the container)
+├── config.yaml                 # Container-side configuration
+├── requirements-client.txt     # Lightweight CLI client deps (this is what you install)
+├── requirements-runtime.txt    # Heavy ML deps — only installed inside the Docker images
+├── requirements-dev.txt        # Dev tooling and tests
+│
 ├── engines/
-│   ├── base_engine.py      # Abstract engine interface
-│   ├── trellis_v2.py       # TRELLIS.2 implementation
-│   └── meshroom.py         # Meshroom SfM implementation
-
+│   ├── base_engine.py          # Abstract engine interface
+│   ├── trellis_v2.py           # TRELLIS.2 implementation
+│   ├── meshroom_sfm.py         # Meshroom Structure-from-Motion
+│   └── multiview_generator.py  # Zero123++ novel-view synthesis
+│
 ├── utils/
-│   ├── logger.py           # Structured logging
-│   ├── pre_processor.py    # Image validation & preprocessing
-│   └── post_processor.py   # Mesh repair, hollowing, supports
-
+│   ├── logger.py               # Structured JSON logger
+│   ├── pre_processor.py        # Image validation & background removal
+│   └── post_processor.py       # Mesh repair, hollowing, supports
+│
 ├── docker/
-│   ├── trellis/
-│   │   └── Dockerfile      # TRELLIS.2 container
-│   ├── meshroom/
-│   │   └── Dockerfile      # Meshroom container
-│   └── shared/
-│       └── Dockerfile.base # Shared CUDA base image
-
-└── scripts/
-    ├── run_local.sh        # Local GPU execution
-    ├── run_azure.sh        # Azure VM deployment
-    └── compare.sh          # Compare engines on same input
+│   ├── Dockerfile.trellis      # TRELLIS.2 runtime image
+│   ├── Dockerfile.meshroom     # Meshroom runtime image
+│   └── shared/Dockerfile.base  # Shared CUDA base
+│
+├── terraform/                  # Azure infrastructure (storage, ACR, key vault)
+│
+├── input/  output/  logs/      # Local working dirs (gitignored)
+└── tests/                      # CPU-only unit tests
 ```
 
-## Docker Deployment
+## Engine choice
 
-### Build TRELLIS.2 Docker Image
+| Aspect | TRELLIS.2 | Meshroom |
+|---|---|---|
+| **Inputs** | 1–4 images | 10–50 overlapping images |
+| **Speed** | seconds | 10–35 minutes |
+| **Style** | Stylized, clean, textured | Photorealistic geometry |
+| **GPU memory** | 24 GB+ (V100) | 8–16 GB (V100 or T4) |
+| **Best for** | Single product shots, character refs | Real-world scans, busts |
 
+The `--gpu-sku` flag (default `V100`) accepts `V100` or `T4`. T4 is roughly 1/6 the cost of V100; use it for iteration and Meshroom jobs.
+
+## Cost notes
+
+- Storage account, ACR, Key Vault, Log Analytics: persistent, ~$1–2/month.
+- ACI: pay-per-second only while a job runs. V100 ≈ $3/hour, T4 ≈ $0.50/hour.
+- Containers in `Failed`/`Succeeded` state don't bill but linger in the resource group — pass `--cleanup` to delete them automatically, or run `python scripts/cleanup_old_jobs.py` periodically.
+
+A budget alert is provisioned by Terraform; tune the cap in `terraform/dev.tfvars`.
+
+## Container internals (for contributors)
+
+The runtime images are built by `az acr build` from `docker/Dockerfile.{trellis,meshroom}`. Inside, `main.py` is the orchestrator: validation → preprocessing → engine inference → mesh post-processing → STL export.
+
+To iterate on engine code, push to ACR and submit a smoke-test job:
 ```bash
-docker build -t 3dfigurine-trellis:latest -f docker/trellis/Dockerfile .
-
-# Test
-docker run --gpus all \
-  -v $(pwd)/input:/workspace/input \
-  -v $(pwd)/output:/workspace/output \
-  3dfigurine-trellis:latest \
-  --input input/test.jpg --engine trellis --output-dir output
+az acr build --registry acr3dfigurinelabdev --image 3dfigurine-trellis:latest -f docker/Dockerfile.trellis .
+python scripts/run_job.py --engine trellis --input ./input/test.jpg --gpu-sku T4 --cleanup
 ```
-
-### Build Meshroom Docker Image
-
-```bash
-docker build -t 3dfigurine-meshroom:latest -f docker/meshroom/Dockerfile .
-
-# Test with image directory
-docker run --gpus all \
-  -v $(pwd)/input:/workspace/input \
-  -v $(pwd)/output:/workspace/output \
-  3dfigurine-meshroom:latest \
-  --input input/photos_dir --engine meshroom --output-dir output
-```
-
-## Azure Deployment
-
-### Prerequisites
-- Azure GPU VM (Standard_A100_v4 or Standard_A10, Ubuntu 22.04)
-- NVIDIA drivers + CUDA 12.4 installed
-- Docker + NVIDIA runtime configured
-
-### Deploy
-
-```bash
-# Option 1: Run with local script
-./scripts/run_azure.sh --input photos_dir --engine meshroom
-
-# Option 2: Direct Azure VM SSH
-ssh azureuser@your-vm-ip
-cd /opt/3dfigurine-lab
-docker run --gpus all \
-  -v /data/input:/workspace/input \
-  -v /data/output:/workspace/output \
-  3dfigurine-trellis:latest \
-  --input input/photo.jpg --engine trellis
-```
-
-## Performance Metrics
-
-### TRELLIS.2 (GPU: A100 40GB)
-- **Single image**: ~5 seconds
-- **3 images (multi-view)**: ~12 seconds
-- **GPU memory peak**: ~22GB
-- **Output quality**: Ultra (voxel-based, stylized)
-
-### Meshroom (GPU: A100 40GB)
-- **15 images**: ~10-15 minutes
-- **30 images**: ~15-25 minutes
-- **50 images**: ~25-35 minutes
-- **GPU memory**: 8-16GB (MVS step)
-- **Disk space**: ~10GB temporary space per job
-
-## Troubleshooting
-
-### TRELLIS.2: "CUDA out of memory"
-- Requires 24GB+ VRAM
-- If running A10 (24GB), close other GPU processes
-- Fallback: Use smaller image (512 resolution in config)
-
-### Meshroom: Processing very slow
-- CPU-only mode active (GPU not available)
-- Enable GPU in config.yaml: `meshroom.use_gpu: true`
-- Add more images (10-20 optimal balance)
-
-### Mesh repair fails with manifold error
-- Try increasing `mesh_repair.max_hole_size` in config
-- Manually review mesh in MeshLab/Blender
-- Contact support if persistent
 
 ## Development
 
-### Run Tests
-
 ```bash
-pytest tests/ -v --cov=.
-```
+# CPU-only tests (no GPU required)
+pip install -r requirements-dev.txt
+pytest tests/ -v
 
-### Code Quality
-
-```bash
+# Style
 black .
 flake8 .
 ```
 
+CI (GitHub Actions) runs the same checks on every PR. CI is your primary pre-flight gate before paying for an ACI run.
+
 ## License
 
-Proprietary – 3D Printing Business
+Proprietary — 3D Printing Business.
 
 ## Support
 
