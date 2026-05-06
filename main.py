@@ -91,6 +91,7 @@ class Pipeline:
         config: Config,
         output_dir: Optional[Path] = None,
         post_processing_config: Optional[PostProcessingConfig] = None,
+        generate_views: bool = False,
     ):
         """
         Initialize pipeline.
@@ -107,6 +108,7 @@ class Pipeline:
         self.post_processing_config = (
             post_processing_config or self._get_default_post_processing_config()
         )
+        self.generate_views = generate_views
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_dir = self.output_dir / engine_name / self.timestamp
         self.session_dir.mkdir(parents=True, exist_ok=True)
@@ -117,21 +119,18 @@ class Pipeline:
 
     def _get_default_post_processing_config(self) -> PostProcessingConfig:
         """Load post-processing config from YAML."""
-        pp_config = self.config.get("post_processing", {})
+        cfg = self.config
         return PostProcessingConfig(
-            repair_non_manifold=pp_config.get("auto_repair", True),
-            max_hole_size=pp_config.get("mesh_repair.max_hole_size", 30),
-            remove_isolated_pieces=pp_config.get(
-                "mesh_repair.remove_isolated_pieces", True
+            repair_non_manifold=cfg.get("post_processing.auto_repair", True),
+            max_hole_size=cfg.get("post_processing.mesh_repair.max_hole_size", 30),
+            hollow_enabled=cfg.get("post_processing.hollowing.enabled", False),
+            wall_thickness=cfg.get("post_processing.hollowing.wall_thickness_mm", 2.0),
+            voxel_resolution=cfg.get("post_processing.hollowing.voxel_resolution_mm", 1.0),
+            generate_supports=cfg.get("post_processing.supports.enabled", False),
+            support_angle_threshold=cfg.get(
+                "post_processing.supports.angle_threshold_degrees", 45
             ),
-            hollow_enabled=pp_config.get("hollowing.enabled", False),
-            wall_thickness=pp_config.get("hollowing.wall_thickness_mm", 2.0),
-            voxel_resolution=pp_config.get("hollowing.voxel_resolution_mm", 1.0),
-            generate_supports=pp_config.get("supports.enabled", False),
-            support_angle_threshold=pp_config.get(
-                "supports.angle_threshold_degrees", 45
-            ),
-            support_diameter=pp_config.get("supports.diameter_mm", 4.0),
+            support_diameter=cfg.get("post_processing.supports.diameter_mm", 4.0),
         )
 
     def run(self, image_paths: List[str]) -> Dict[str, Any]:
@@ -166,6 +165,13 @@ class Pipeline:
             logger.info("STAGE 3: IMAGE PREPROCESSING")
             logger.info("=" * 60)
             preprocessed = self._preprocess_images(image_paths)
+
+            # Stage 3.5: Multi-view generation (optional)
+            if self.generate_views:
+                logger.info("=" * 60)
+                logger.info("STAGE 3.5: MULTI-VIEW GENERATION")
+                logger.info("=" * 60)
+                preprocessed = self._generate_views(preprocessed)
 
             # Stage 4: Run inference
             logger.info("=" * 60)
@@ -230,23 +236,35 @@ class Pipeline:
 
         # Engine-specific validation
         if self.engine_name == "trellis":
-            if len(validated_paths) > 4:
+            if not self.generate_views and len(validated_paths) > 4:
                 raise ValueError(
-                    f"TRELLIS.2 supports max 4 images, got {len(validated_paths)}"
+                    f"TRELLIS.2 supports max 4 images, got {len(validated_paths)}. "
+                    f"Tip: use --generate-views to auto-select the best 4."
                 )
-            logger.info(f"✓ TRELLIS.2: {len(validated_paths)} images (max 4)")
+            if self.generate_views:
+                logger.info(
+                    f"✓ TRELLIS.2: {len(validated_paths)} source image(s) "
+                    f"(will be reduced to 4 after view generation)"
+                )
+            else:
+                logger.info(f"✓ TRELLIS.2: {len(validated_paths)} images (max 4)")
         elif self.engine_name == "meshroom":
-            if len(validated_paths) < 10:
-                raise ValueError(
-                    f"Meshroom requires min 10 images, got {len(validated_paths)}"
-                )
             if len(validated_paths) > 50:
                 raise ValueError(
                     f"Meshroom supports max 50 images, got {len(validated_paths)}"
                 )
-            logger.info(
-                f"✓ Meshroom: {len(validated_paths)} images (10-50 range)"
-            )
+            if self.generate_views:
+                logger.info(
+                    f"✓ Meshroom: {len(validated_paths)} source image(s) "
+                    f"(additional views will be generated)"
+                )
+            else:
+                if len(validated_paths) < 10:
+                    raise ValueError(
+                        f"Meshroom requires min 10 images, got {len(validated_paths)}. "
+                        f"Tip: use --generate-views to synthesise the remaining views automatically."
+                    )
+                logger.info(f"✓ Meshroom: {len(validated_paths)} images (10-50 range)")
 
         return validated_paths
 
@@ -263,9 +281,7 @@ class Pipeline:
         logger.info(f"Loading engine: {self.engine_name}")
 
         engine_config = EngineConfig(
-            engine_name=self.engine_name,
-            region="us-west-2",
-            output_dir=str(self.session_dir),
+            max_images=4 if self.engine_name == "trellis" else 50,
         )
 
         engine = load_engine(self.engine_name, engine_config)
@@ -326,6 +342,19 @@ class Pipeline:
 
         logger.info(f"✓ Preprocessed {len(preprocessed_paths)} images")
         return preprocessed_paths
+
+    def _generate_views(self, image_paths: List[str]) -> List[str]:
+        """Generate novel views using Zero123++ to augment the input image set."""
+        from engines.multiview_generator import MultiViewGenerator
+
+        target_count = 4 if self.engine_name == "trellis" else 50
+        logger.info(
+            f"Generating novel views (source: {len(image_paths)}, target: {target_count})..."
+        )
+        gen = MultiViewGenerator()
+        augmented = gen.augment_image_paths(image_paths, target_count, self.session_dir)
+        logger.info(f"✓ Multi-view generation complete: {len(augmented)} images total")
+        return augmented
 
     def _run_inference(self, engine, image_paths: List[str]) -> str:
         """
@@ -556,6 +585,17 @@ Examples:
         help="Support diameter in mm (default: 4.0)",
     )
 
+    # Multi-view generation
+    parser.add_argument(
+        "--generate-views",
+        action="store_true",
+        help=(
+            "Generate additional viewing angles using Zero123++ before 3D reconstruction. "
+            "TRELLIS: augments to 4 views. Meshroom: augments to 50 views, enabling "
+            "photogrammetry from as few as 1 source photo."
+        ),
+    )
+
     # Verbose
     parser.add_argument(
         "-v",
@@ -571,7 +611,6 @@ Examples:
         logs_dir = Path(args.config).parent / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         setup_logger(
-            name="3d_figurine_lab",
             level="DEBUG" if args.verbose else "INFO",
             log_dir=str(logs_dir),
         )
@@ -616,7 +655,7 @@ Examples:
         output_dir = Path(args.output) if args.output else None
 
         # Run pipeline
-        pipeline = Pipeline(args.engine, config, output_dir, pp_config)
+        pipeline = Pipeline(args.engine, config, output_dir, pp_config, generate_views=args.generate_views)
         results = pipeline.run(image_paths)
 
         logger.info(f"✓ Pipeline completed successfully")
