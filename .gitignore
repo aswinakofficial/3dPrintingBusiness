@@ -52,6 +52,14 @@ output/
 .dockerignore
 *.tar.gz
 
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+.terraform/
+.terraform.lock.hcl
+
 # OS
 .DS_Store
 Thumbs.db
