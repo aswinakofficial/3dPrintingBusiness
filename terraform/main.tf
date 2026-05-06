@@ -10,7 +10,6 @@ resource "azurerm_resource_group" "main" {
     var.tags,
     {
       Environment = var.environment
-      CreatedDate = timestamp()
     }
   )
 }
@@ -20,13 +19,31 @@ resource "azurerm_storage_account" "main" {
   name                       = "st${replace(var.project_name, "-", "")}${var.environment}"
   resource_group_name        = azurerm_resource_group.main.name
   location                   = azurerm_resource_group.main.location
-  account_tier               = "Premium"
+  account_tier               = "Standard"
   account_replication_type   = "LRS"
   access_tier                = var.storage_access_tier
   https_traffic_only_enabled = true
   min_tls_version            = "TLS1_2"
 
   tags = var.tags
+}
+
+# Premium File Storage for Container Apps job data and model cache
+resource "azurerm_storage_account" "files" {
+  name                     = "st${replace(var.project_name, "-", "")}files${var.environment}"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Premium"
+  account_replication_type = "LRS"
+  account_kind             = "FileStorage"
+
+  tags = var.tags
+}
+
+resource "azurerm_storage_share" "job_data" {
+  name                 = var.azure_files_share_name
+  storage_account_name = azurerm_storage_account.files.name
+  quota                = var.azure_files_share_quota_gb
 }
 
 # Blob Containers for Storage Account
@@ -104,6 +121,24 @@ resource "azurerm_log_analytics_workspace" "main" {
   tags = var.tags
 }
 
+# Azure Container Apps environment for on-demand GPU jobs
+# workload_profile block enables "Workload Profile" mode required for GPU dedicated compute
+resource "azurerm_container_app_environment" "main" {
+  name                       = "cae-${var.project_name}-${var.environment}"
+  location                   = azurerm_resource_group.main.location
+  resource_group_name        = azurerm_resource_group.main.name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+    minimum_count         = 0
+    maximum_count         = 0
+  }
+
+  tags = var.tags
+}
+
 # Application Insights
 resource "azurerm_application_insights" "main" {
   count               = var.enable_monitoring ? 1 : 0
@@ -116,154 +151,7 @@ resource "azurerm_application_insights" "main" {
   tags = var.tags
 }
 
-# Virtual Network
-resource "azurerm_virtual_network" "main" {
-  name                = "vnet-${var.project_name}-${var.environment}"
-  address_space       = var.vnet_address_space
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-
-  tags = var.tags
-}
-
-# Subnet
-resource "azurerm_subnet" "main" {
-  name                 = "subnet-${var.environment}"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = var.subnet_address_prefixes
-}
-
-# Network Security Group
-resource "azurerm_network_security_group" "main" {
-  name                = "nsg-${var.project_name}-${var.environment}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-
-  security_rule {
-    name                       = "Allow-SSH"
-    priority                   = 100
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefixes    = var.allowed_ssh_ips
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "Allow-HTTP"
-    priority                   = 200
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "80"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "Allow-HTTPS"
-    priority                   = 300
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "443"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  tags = var.tags
-}
-
-# Network Interface
-resource "azurerm_network_interface" "main" {
-  name                = "nic-${var.project_name}-${var.environment}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-
-  ip_configuration {
-    name                          = "testconfiguration1"
-    subnet_id                     = azurerm_subnet.main.id
-    private_ip_address_allocation = "Static"
-    private_ip_address            = "10.0.1.4"
-    public_ip_address_id          = azurerm_public_ip.main.id
-  }
-
-  tags = var.tags
-}
-
-# Associate NSG with NIC
-resource "azurerm_network_interface_security_group_association" "main" {
-  network_interface_id      = azurerm_network_interface.main.id
-  network_security_group_id = azurerm_network_security_group.main.id
-}
-
-# Public IP Address
-resource "azurerm_public_ip" "main" {
-  name                = "pip-${var.project_name}-${var.environment}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  allocation_method   = "Dynamic"
-
-  domain_name_label = "${var.project_name}-${var.environment}"
-
-  tags = var.tags
-}
-
-# Virtual Machine
-resource "azurerm_linux_virtual_machine" "main" {
-  name                = "vm-${var.project_name}-${var.environment}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  size                = var.vm_size
-
-  admin_username = var.admin_username
-
-  disable_password_authentication = true
-
-  admin_ssh_key {
-    username   = var.admin_username
-    public_key = file(pathexpand(var.ssh_public_key_path))
-  }
-
-  network_interface_ids = [
-    azurerm_network_interface.main.id,
-  ]
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-focal"
-    sku       = "20_04-lts-gen2"
-    version   = "latest"
-  }
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
-    disk_size_gb         = 256
-  }
-
-  tags = var.tags
-
-  lifecycle {
-    ignore_changes = [
-      admin_ssh_key
-    ]
-  }
-}
-
-# NOTE: VM setup script (vm-setup.sh) should be run manually after VM deployment
-# or integrated via custom script extension. For now, see post-deployment steps in README.tf
-
-# Once VM is running, connect via SSH and run:
-# chmod +x vm-setup.sh && ./vm-setup.sh
-# Or use Azure CLI: az vm run-command invoke --resource-group <rg> --name <vm> --command-id RunShellScript --scripts @vm-setup.sh
-
-# Monitor Action Group (optional - for email alerts)
+# Monitor Action Group (for alerts)
 resource "azurerm_monitor_action_group" "main" {
   name                = "ag-${var.project_name}-${var.environment}"
   resource_group_name = azurerm_resource_group.main.name
@@ -272,27 +160,6 @@ resource "azurerm_monitor_action_group" "main" {
   tags = var.tags
 }
 
-# Metric Alert for CPU Utilization
-resource "azurerm_monitor_metric_alert" "cpu" {
-  name                = "alert-cpu-${var.environment}"
-  resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_linux_virtual_machine.main.id]
-  description         = "Alert when CPU is high"
-  severity            = 2
-  frequency           = "PT1M"
-  window_size         = "PT5M"
-
-  criteria {
-    metric_name       = "Percentage CPU"
-    metric_namespace  = "Microsoft.Compute/virtualMachines"
-    operator          = "GreaterThan"
-    threshold         = 80
-    aggregation       = "Average"
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.main.id
-  }
-
-  tags = var.tags
-}
+# Note: Azure Container Instances are created on-demand via scripts/aci_job_runner.py
+# This Terraform configuration provides the supporting infrastructure (storage, registry, monitoring)
+# while batch job containers are triggered programmatically without persistent VM infrastructure.

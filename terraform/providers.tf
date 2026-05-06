@@ -24,11 +24,15 @@ terraform {
 
 provider "azurerm" {
   features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+
     virtual_machine {
       graceful_shutdown              = true
       skip_shutdown_and_force_delete = false
     }
   }
 
-  skip_provider_registration = false
+  skip_provider_registration = true
 }

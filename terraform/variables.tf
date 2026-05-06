@@ -2,17 +2,12 @@ variable "project_name" {
   description = "Project name for resource naming"
   type        = string
   default     = "3dfigurine-lab"
-
-  validation {
-    condition     = can(regex("^[a-z0-9-]{3,20}$", var.project_name))
-    error_message = "Project name must be 3-20 characters, lowercase alphanumeric and hyphens only."
-  }
 }
 
 variable "environment" {
-  description = "Environment name (dev, staging, prod)"
+  description = "Environment (dev, staging, prod)"
   type        = string
-  default     = "prod"
+  default     = "dev"
 
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
@@ -21,47 +16,9 @@ variable "environment" {
 }
 
 variable "location" {
-  description = "Azure region for resource deployment"
+  description = "Azure region"
   type        = string
   default     = "eastus"
-
-  validation {
-    condition     = length(var.location) > 0
-    error_message = "Location cannot be empty."
-  }
-}
-
-variable "vm_size" {
-  description = "Azure VM size for GPU compute"
-  type        = string
-  default     = "Standard_NC24ads_A100_v4"
-
-  validation {
-    condition     = can(regex("^(Standard_NC|Standard_ND|Standard_NV)", var.vm_size))
-    error_message = "VM size must be a GPU-enabled Azure VM type."
-  }
-}
-
-variable "container_registry_sku" {
-  description = "Container Registry SKU (Basic, Standard, Premium)"
-  type        = string
-  default     = "Premium"
-
-  validation {
-    condition     = contains(["Basic", "Standard", "Premium"], var.container_registry_sku)
-    error_message = "SKU must be Basic, Standard, or Premium."
-  }
-}
-
-variable "storage_sku" {
-  description = "Storage account SKU"
-  type        = string
-  default     = "Premium_LRS"
-
-  validation {
-    condition     = contains(["Standard_LRS", "Standard_GRS", "Standard_RAGRS", "Standard_ZRS", "Premium_LRS", "Premium_ZRS"], var.storage_sku)
-    error_message = "Invalid storage SKU."
-  }
 }
 
 variable "storage_access_tier" {
@@ -75,80 +32,68 @@ variable "storage_access_tier" {
   }
 }
 
-variable "enable_monitoring" {
-  description = "Enable Application Insights and monitoring"
-  type        = bool
-  default     = true
+variable "storage_sku" {
+  description = "Storage account SKU"
+  type        = string
+  default     = "Standard_LRS"
+}
+
+variable "container_registry_sku" {
+  description = "Container Registry SKU"
+  type        = string
+  default     = "Basic"
+
+  validation {
+    condition     = contains(["Basic", "Standard", "Premium"], var.container_registry_sku)
+    error_message = "Container Registry SKU must be Basic, Standard, or Premium."
+  }
 }
 
 variable "log_retention_days" {
-  description = "Log Analytics retention in days"
+  description = "Log Analytics retention period in days"
   type        = number
   default     = 30
 
   validation {
-    condition     = var.log_retention_days >= 7 && var.log_retention_days <= 730
-    error_message = "Log retention must be between 7 and 730 days."
+    condition     = var.log_retention_days >= 30 && var.log_retention_days <= 730
+    error_message = "Retention days must be 30-730."
   }
 }
 
-variable "enable_auto_scaling" {
-  description = "Enable auto-scaling for VM resources"
+variable "enable_monitoring" {
+  description = "Enable Application Insights monitoring"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "container_images" {
-  description = "Container image URIs"
-  type = object({
-    trellis  = string
-    meshroom = string
-  })
-
+  description = "Container image references for batch jobs"
+  type        = map(string)
   default = {
-    trellis  = "mcr.microsoft.com/hello-world:latest"
-    meshroom = "mcr.microsoft.com/hello-world:latest"
+    trellis  = "myregistry.azurecr.io/3dfigurine-trellis:latest"
+    meshroom = "myregistry.azurecr.io/3dfigurine-meshroom:latest"
   }
 }
 
-variable "admin_username" {
-  description = "VM admin username"
+variable "azure_files_share_name" {
+  description = "Azure Files share mounted into Container Apps jobs"
   type        = string
-  default     = "azureuser"
+  default     = "jobdata"
 }
 
-variable "ssh_public_key_path" {
-  description = "Path to SSH public key file"
-  type        = string
-  default     = "~/.ssh/azure_3dfigurine.pub"
+variable "azure_files_share_quota_gb" {
+  description = "Azure Files share quota in GiB"
+  type        = number
+  default     = 1024
 }
 
 variable "tags" {
-  description = "Tags to apply to all resources"
+  description = "Common tags to apply to all resources"
   type        = map(string)
-
   default = {
     Project     = "3D Figurine Lab"
-    Environment = "prod"
+    Environment = "dev"
     ManagedBy   = "Terraform"
+    CostCenter  = "Engineering"
   }
-}
-
-variable "allowed_ssh_ips" {
-  description = "CIDR blocks allowed for SSH access"
-  type        = list(string)
-
-  default = ["0.0.0.0/0"] # Change to restrict SSH access
-}
-
-variable "vnet_address_space" {
-  description = "Virtual network address space"
-  type        = list(string)
-  default     = ["10.0.0.0/16"]
-}
-
-variable "subnet_address_prefixes" {
-  description = "Subnet address prefixes"
-  type        = list(string)
-  default     = ["10.0.1.0/24"]
 }

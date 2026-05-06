@@ -60,6 +60,9 @@ tfplan
 .terraform/
 .terraform.lock.hcl
 
+# Claude Code session metadata
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
