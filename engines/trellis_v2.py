@@ -1,407 +1,145 @@
-"""
-TRELLIS.2 Engine - Image-to-3D generation using TRELLIS.2-4B model.
-Supports single image or multi-image (1-4) conditioning for enhanced geometry.
-"""
+"""TRELLIS.2 Engine - Image-to-3D using the official Microsoft TRELLIS.2-4B pipeline."""
+
+import os
+
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import time
 from pathlib import Path
-from typing import Union, List, Optional, Any
-import tempfile
+from typing import Any, List, Union
 
 import torch
-import numpy as np
-from PIL import Image
 import trimesh
+from PIL import Image
 
 from engines.base_engine import Engine, EngineConfig
 from utils.logger import get_logger
-from utils.pre_processor import ImageValidator, ImagePreprocessor
+from utils.pre_processor import ImagePreprocessor, ImageValidator
 
 logger = get_logger()
 
 
 class TRELLIS2Engine(Engine):
-    """
-    TRELLIS.2 engine for image-to-3D generation.
-    
-    Capabilities:
-    - Single image → 3D mesh
-    - Multi-image (1-4) conditioning for better geometry
-    - Output: GLB with textures + PBR materials
-    - Inference: 3-17 seconds depending on resolution
-    - GPU requirement: 24GB+ VRAM (A10, A100 recommended)
-    """
+    """TRELLIS.2-4B image-to-3D engine using the official Microsoft pipeline."""
 
     MODEL_ID = "microsoft/TRELLIS.2-4B"
-    DEFAULT_RESOLUTION = 1024
-    TRELLIS_INPUT_SIZE = 512
 
     def __init__(self, config: EngineConfig):
-        """
-        Initialize TRELLIS.2 engine.
-
-        Args:
-            config: EngineConfig instance
-        """
         super().__init__(config)
-        self.model = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.pipeline = None
-        self.model_loaded = False
+        self.pipeline_loaded = False
 
     def validate_prerequisites(self) -> bool:
-        """
-        Validate all prerequisites for TRELLIS.2 execution.
-
-        Checks:
-        - CUDA available and version
-        - GPU memory >= 24GB
-        - Model can be downloaded/loaded
-        - Required packages installed
-
-        Returns:
-            True if all prerequisites met
-
-        Raises:
-            RuntimeError: If prerequisites not met
-        """
         logger.info("Validating TRELLIS.2 prerequisites")
 
-        # Check CUDA
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA not available. TRELLIS.2 requires NVIDIA GPU.")
+            raise RuntimeError("CUDA not available — TRELLIS.2 requires NVIDIA GPU")
 
-        logger.debug("CUDA available", cuda_version=torch.version.cuda)
+        total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        if total_gb < 24:
+            raise RuntimeError(f"GPU has only {total_gb:.1f}GB, need 24GB+ for TRELLIS.2")
+        logger.info(f"GPU memory OK: {total_gb:.1f}GB")
 
-        # Check GPU memory
         try:
-            total_memory = torch.cuda.get_device_properties(self.device).total_memory
-            total_memory_gb = total_memory / (1024 ** 3)
-
-            if total_memory_gb < 24:
-                raise RuntimeError(
-                    f"Insufficient GPU memory: {total_memory_gb:.1f}GB available, "
-                    f"24GB minimum required for TRELLIS.2"
-                )
-
-            logger.info(
-                "GPU memory validation passed",
-                gpu_memory_gb=round(total_memory_gb, 1),
+            from trellis2.pipelines import Trellis2ImageTo3DPipeline  # noqa: F401
+            import o_voxel  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                f"trellis2/o_voxel package not installed in container: {exc}"
             )
-        except Exception as e:
-            raise RuntimeError(f"Failed to check GPU memory: {e}")
-
-        # Try to load model (this will download if not cached)
-        try:
-            logger.info(f"Loading model: {self.MODEL_ID}")
-            self._load_model()
-            logger.info("Model loaded successfully", model_id=self.MODEL_ID)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load TRELLIS.2 model: {e}")
-
-        logger.info("All prerequisites validated for TRELLIS.2")
+        logger.info("trellis2 + o_voxel imports OK")
         return True
 
-    def _load_model(self):
-        """Load TRELLIS.2-4B model from HuggingFace."""
-        if self.model_loaded:
+    def _load_pipeline(self):
+        if self.pipeline_loaded:
             return
+        from trellis2.pipelines import Trellis2ImageTo3DPipeline
 
-        try:
-            from transformers import AutoModel
+        logger.info(f"Loading {self.MODEL_ID} from HuggingFace (multi-GB download)...")
+        start = time.time()
+        self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.MODEL_ID)
+        self.pipeline.cuda()
+        self.pipeline_loaded = True
+        logger.info(f"TRELLIS.2 pipeline ready in {time.time() - start:.1f}s")
 
-            logger.debug(f"Loading model {self.MODEL_ID} from HuggingFace")
-
-            # Load model to device
-            self.model = AutoModel.from_pretrained(
-                self.MODEL_ID,
-                trust_remote_code=True,
-                torch_dtype=torch.float16,
-                device_map=str(self.device),
-            )
-
-            self.model.eval()
-            self.model_loaded = True
-
-            logger.debug("Model loaded to device", device=str(self.device))
-
-        except ImportError as e:
-            raise RuntimeError(
-                f"Failed to import transformers or required packages: {e}"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load model: {e}")
-
-    def preprocess(
-        self,
-        image_paths: Union[str, List[str]],
-    ) -> List[Image.Image]:
-        """
-        Preprocess input image(s) for TRELLIS.2.
-
-        Args:
-            image_paths: Single path, list of paths (1-4 images)
-
-        Returns:
-            List of preprocessed PIL Images (normalized to 512x512)
-        """
-        logger.debug("Starting preprocessing for TRELLIS.2")
-
-        # Convert single string to list
+    def preprocess(self, image_paths: Union[str, List[str]]) -> List[Image.Image]:
         if isinstance(image_paths, str):
             image_paths = [image_paths]
 
-        # Validate input images
-        validated_paths = ImageValidator.validate_input_images(
-            image_paths,
-            allow_directory=False,  # TRELLIS doesn't support directories
-        )
-
-        if len(validated_paths) > self.config.max_images:
+        validated = ImageValidator.validate_input_images(image_paths, allow_directory=False)
+        if len(validated) > self.config.max_images:
             logger.warning(
-                f"Too many images for TRELLIS.2, using first {self.config.max_images}",
-                provided=len(validated_paths),
-                max_allowed=self.config.max_images,
+                f"Got {len(validated)} images, using first {self.config.max_images}"
             )
-            validated_paths = validated_paths[: self.config.max_images]
+            validated = validated[: self.config.max_images]
 
-        # Load and normalize images
-        preprocessed = []
-        for path in validated_paths:
+        images = []
+        for path in validated:
             img = ImagePreprocessor.load_image(path)
-
-            # Remove background for better 3D reconstruction
             img = ImagePreprocessor.remove_background(img)
+            images.append(img)
+        logger.info(f"Preprocessed {len(images)} image(s)")
+        return images
 
-            # Normalize to TRELLIS input size
-            img = ImagePreprocessor.normalize_image(
-                img,
-                target_size=self.TRELLIS_INPUT_SIZE,
-                remove_bg=False,  # Already removed
-            )
+    def infer(self, preprocessed_images: List[Image.Image]) -> Any:
+        """Run TRELLIS.2 — returns a native Trellis2Mesh (NOT trimesh.Trimesh)."""
+        if not preprocessed_images:
+            raise ValueError("No preprocessed images supplied")
 
-            preprocessed.append(img)
+        self._load_pipeline()
 
-            logger.debug(
-                f"Preprocessed image",
-                file=Path(path).name,
-                size=f"{img.width}x{img.height}",
-            )
-
+        image = preprocessed_images[0]
         logger.info(
-            "Preprocessing complete",
-            num_images=len(preprocessed),
-            input_size=f"{self.TRELLIS_INPUT_SIZE}x{self.TRELLIS_INPUT_SIZE}",
+            f"Running TRELLIS.2 inference on {image.size[0]}x{image.size[1]} image..."
         )
-
-        return preprocessed
-
-    def infer(self, preprocessed_images: List[Image.Image]) -> trimesh.Mesh:
-        """
-        Run TRELLIS.2 inference on preprocessed images.
-
-        Supports single or multi-image (up to 4) conditioning.
-
-        Args:
-            preprocessed_images: List of PIL Images from preprocess()
-
-        Returns:
-            trimesh.Mesh object
-        """
-        if not self.model_loaded:
-            self._load_model()
-
-        logger.info(
-            f"Starting TRELLIS.2 inference",
-            num_images=len(preprocessed_images),
-            device=str(self.device),
-        )
-
-        start_time = time.time()
-
+        start = time.time()
         try:
-            # Convert PIL images to tensors
-            image_tensors = []
-            for img in preprocessed_images:
-                # Convert to numpy array and normalize to [0, 1]
-                img_array = np.array(img).astype(np.float32) / 255.0
-
-                # Convert to torch tensor, permute to CHW format
-                tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0)
-                tensor = tensor.to(self.device, dtype=torch.float16)
-
-                image_tensors.append(tensor)
-
-            # Concatenate if multiple images (for multi-view conditioning)
-            if len(image_tensors) > 1:
-                # Stack along batch dimension for multi-image conditioning
-                input_tensor = torch.cat(image_tensors, dim=0)
-                logger.debug(
-                    "Multi-image conditioning",
-                    input_shape=tuple(input_tensor.shape),
-                )
-            else:
-                input_tensor = image_tensors[0]
-                logger.debug("Single image inference", input_shape=tuple(input_tensor.shape))
-
-            # Run inference
-            with torch.no_grad():
-                # TRELLIS.2 model forward pass
-                # Expected output: trimesh.Mesh or point cloud representation
-                output = self.model(input_tensor)
-
-            # Handle different output types from TRELLIS.2
-            mesh = self._extract_mesh_from_output(output)
-
-            # Clear GPU cache
+            result = self.pipeline.run(image)
+            mesh = result[0]
+            mesh.simplify(16777216)
+        except Exception as exc:
             torch.cuda.empty_cache()
+            raise RuntimeError(f"TRELLIS.2 inference failed: {exc}")
 
-            inference_time_ms = int((time.time() - start_time) * 1000)
+        torch.cuda.empty_cache()
+        logger.info(f"Inference complete in {time.time() - start:.1f}s")
+        return mesh
 
-            logger.log_inference_complete(
-                "TRELLIS.2",
-                inference_time_ms,
-                "memory",
-                {
-                    "vertices": len(mesh.vertices),
-                    "faces": len(mesh.faces),
-                    "volume_mm3": round(mesh.volume, 2),
-                },
-            )
+    def postprocess(self, raw_mesh: Any) -> str:
+        """Export Trellis2Mesh to GLB via o_voxel.postprocess.to_glb."""
+        import o_voxel
 
-            return mesh
+        output_dir = Path("/app/output/trellis")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_file = output_dir / f"trellis_{timestamp}_raw.glb"
 
-        except Exception as e:
-            torch.cuda.empty_cache()
-            logger.error(f"TRELLIS.2 inference failed: {e}")
-            raise RuntimeError(f"Inference failed: {e}")
-
-    def _extract_mesh_from_output(self, output: Any) -> trimesh.Mesh:
-        """
-        Extract trimesh.Mesh from TRELLIS.2 model output.
-
-        TRELLIS.2 typically outputs:
-        - O-Voxel representation (internal format)
-        - May include vertices and faces directly
-        - May output point cloud for surface reconstruction
-
-        Args:
-            output: Model output (dict or tensor or Mesh)
-
-        Returns:
-            trimesh.Mesh object
-        """
-        # Handle direct mesh output
-        if isinstance(output, trimesh.Mesh):
-            logger.debug("Output is trimesh.Mesh directly")
-            return output
-
-        # Handle dictionary output (common for transformers)
-        if isinstance(output, dict):
-            if "mesh" in output:
-                mesh = output["mesh"]
-                if isinstance(mesh, trimesh.Mesh):
-                    return mesh
-
-            # Handle O-Voxel representation
-            if "voxels" in output or "o_voxel" in output:
-                logger.debug("Converting O-Voxel representation to mesh")
-                # For now, return dummy mesh - actual implementation requires
-                # TRELLIS-specific voxel-to-mesh conversion
-                voxels = output.get("voxels") or output.get("o_voxel")
-                mesh = self._voxels_to_mesh(voxels)
-                return mesh
-
-            # Handle point cloud output
-            if "vertices" in output:
-                vertices = output["vertices"]
-                faces = output.get("faces", [])
-                if isinstance(vertices, torch.Tensor):
-                    vertices = vertices.detach().cpu().numpy()
-                if isinstance(faces, torch.Tensor):
-                    faces = faces.detach().cpu().numpy()
-
-                mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-                logger.debug("Created mesh from output vertices/faces")
-                return mesh
-
-        # Fallback: create simple mesh from tensor
-        if isinstance(output, torch.Tensor):
-            logger.warning("Received raw tensor output, attempting conversion")
-            # This is a simplified fallback
-            vertices = output.detach().cpu().numpy()
-            mesh = trimesh.Trimesh(vertices=vertices)
-            return mesh
-
-        raise RuntimeError(
-            f"Unable to extract mesh from output type: {type(output)}"
+        logger.info("Exporting GLB via o_voxel...")
+        glb = o_voxel.postprocess.to_glb(
+            vertices=raw_mesh.vertices,
+            faces=raw_mesh.faces,
+            attr_volume=raw_mesh.attrs,
+            coords=raw_mesh.coords,
+            attr_layout=raw_mesh.layout,
+            voxel_size=raw_mesh.voxel_size,
+            aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+            decimation_target=1000000,
+            texture_size=4096,
+            remesh=True,
+            remesh_band=1,
+            remesh_project=0,
+            verbose=True,
         )
+        glb.export(str(output_file), extension_webp=True)
+        logger.info(f"Exported TRELLIS.2 output to {output_file}")
+        return str(output_file)
 
-    def _voxels_to_mesh(self, voxels: Any) -> trimesh.Mesh:
-        """
-        Convert O-Voxel or voxel grid representation to trimesh.
-
-        Args:
-            voxels: Voxel representation from TRELLIS.2
-
-        Returns:
-            trimesh.Mesh object
-        """
-        try:
-            # Convert to numpy if needed
-            if isinstance(voxels, torch.Tensor):
-                voxels = voxels.detach().cpu().numpy()
-
-            # Use trimesh voxelization for surface extraction
-            # This assumes voxels is a 3D binary grid
-            if voxels.ndim == 3:
-                # Create voxel grid
-                mesh = trimesh.voxel.VoxelGrid(voxels).marching_cubes
-                logger.debug("Converted voxel grid to mesh via marching cubes")
-                return mesh
-            else:
-                raise ValueError(f"Unexpected voxel shape: {voxels.shape}")
-
-        except Exception as e:
-            logger.warning(f"Voxel to mesh conversion failed: {e}")
-            # Return empty mesh as fallback
-            return trimesh.Trimesh(vertices=[], faces=[])
-
-    def postprocess(self, raw_mesh: trimesh.Mesh) -> str:
-        """
-        Export TRELLIS.2 mesh to standardized output format (GLB).
-
-        Args:
-            raw_mesh: trimesh.Mesh from infer()
-
-        Returns:
-            Path to exported GLB file
-        """
-        logger.info("Starting postprocessing for TRELLIS.2 output")
-
-        try:
-            output_dir = Path(self.config.output_format or "./output/trellis")
-            output_dir = Path("output") / "trellis"
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Generate filename with timestamp
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            output_file = output_dir / f"trellis_{timestamp}_raw.glb"
-
-            # Export to GLB format (includes materials if available)
-            raw_mesh.export(str(output_file), file_type="glb", include_normal=True)
-
-            logger.info(
-                "Exported TRELLIS.2 output",
-                output_file=str(output_file),
-                vertices=len(raw_mesh.vertices),
-                faces=len(raw_mesh.faces),
-            )
-
-            return str(output_file)
-
-        except Exception as e:
-            logger.error(f"Postprocessing failed: {e}")
-            raise RuntimeError(f"Failed to export mesh: {e}")
-
-
-__all__ = ["TRELLIS2Engine"]
+    def get_engine_info(self) -> dict:
+        return {
+            "name": "TRELLIS.2",
+            "model_id": self.MODEL_ID,
+            "max_images": self.config.max_images,
+            "device": str(self.device),
+        }

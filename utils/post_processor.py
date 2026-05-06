@@ -56,7 +56,7 @@ class MeshRepair:
         self.config = config
         logger.debug("Initialized MeshRepair handler")
 
-    def repair_mesh(self, mesh: trimesh.Mesh) -> trimesh.Mesh:
+    def repair_mesh(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
         """
         Repair mesh non-manifold geometry and defects.
 
@@ -123,7 +123,7 @@ class MeshRepair:
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-    def _fill_holes(self, mesh: trimesh.Mesh, max_hole_size: int) -> int:
+    def _fill_holes(self, mesh: trimesh.Trimesh, max_hole_size: int) -> int:
         """
         Fill small holes in mesh.
 
@@ -172,7 +172,7 @@ class MeshHollowing:
         self.config = config
         logger.debug("Initialized MeshHollowing handler")
 
-    def hollow_mesh(self, mesh: trimesh.Mesh) -> trimesh.Mesh:
+    def hollow_mesh(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
         """
         Create hollow shell from solid mesh with uniform wall thickness.
 
@@ -229,7 +229,7 @@ class MeshHollowing:
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-    def _make_watertight(self, mesh: trimesh.Mesh) -> trimesh.Mesh:
+    def _make_watertight(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
         """
         Attempt to make mesh watertight using morphological operations.
 
@@ -254,10 +254,10 @@ class MeshHollowing:
 
     def _create_hollow_voxel(
         self,
-        mesh: trimesh.Mesh,
+        mesh: trimesh.Trimesh,
         wall_thickness: float,
         voxel_resolution: float,
-    ) -> Optional[trimesh.Mesh]:
+    ) -> Optional[trimesh.Trimesh]:
         """
         Create hollow mesh using voxelization method.
 
@@ -305,8 +305,8 @@ class MeshHollowing:
             return None
 
     def _create_hollow_offset(
-        self, mesh: trimesh.Mesh, wall_thickness: float
-    ) -> trimesh.Mesh:
+        self, mesh: trimesh.Trimesh, wall_thickness: float
+    ) -> trimesh.Trimesh:
         """
         Create hollow mesh using offset method.
 
@@ -344,7 +344,7 @@ class MeshHollowing:
             logger.warning(f"Offset-based hollowing failed: {e}")
             return mesh
 
-    def _add_drainage_holes(self, mesh: trimesh.Mesh, hole_diameter: float = 3.0) -> trimesh.Mesh:
+    def _add_drainage_holes(self, mesh: trimesh.Trimesh, hole_diameter: float = 3.0) -> trimesh.Trimesh:
         """
         Add drainage holes for interior cavities (post-processing).
 
@@ -373,7 +373,7 @@ class SupportGenerator:
         self.config = config
         logger.debug("Initialized SupportGenerator handler")
 
-    def generate_supports(self, mesh: trimesh.Mesh) -> Dict[str, Any]:
+    def generate_supports(self, mesh: trimesh.Trimesh) -> Dict[str, Any]:
         """
         Generate support structures for overhanging surfaces.
 
@@ -437,7 +437,7 @@ class SupportGenerator:
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-    def _identify_overhangs(self, mesh: trimesh.Mesh) -> np.ndarray:
+    def _identify_overhangs(self, mesh: trimesh.Trimesh) -> np.ndarray:
         """
         Identify faces that overhang (insufficient support below).
 
@@ -469,7 +469,7 @@ class SupportGenerator:
             logger.warning(f"Overhang detection failed: {e}")
             return np.array([])
 
-    def _group_supports(self, mesh: trimesh.Mesh, overhang_indices: np.ndarray) -> list:
+    def _group_supports(self, mesh: trimesh.Trimesh, overhang_indices: np.ndarray) -> list:
         """
         Group overhanging faces into connected regions.
 
@@ -511,7 +511,7 @@ class SupportGenerator:
             return []
 
     def _find_connected_region(
-        self, mesh: trimesh.Mesh, start_face: int, overhang_set: np.ndarray, processed: set
+        self, mesh: trimesh.Trimesh, start_face: int, overhang_set: np.ndarray, processed: set
     ) -> set:
         """
         Find connected component of overhanging faces using BFS.
@@ -544,7 +544,7 @@ class SupportGenerator:
 
         return region
 
-    def _create_support_columns(self, mesh: trimesh.Mesh, support_regions: list) -> trimesh.Mesh:
+    def _create_support_columns(self, mesh: trimesh.Trimesh, support_regions: list) -> trimesh.Trimesh:
         """
         Create minimal support columns from centroids to build platform.
 
@@ -588,7 +588,7 @@ class SupportGenerator:
             logger.warning(f"Support column creation failed: {e}")
             return None
 
-    def _add_raft(self, mesh: trimesh.Mesh, support_mesh: Optional[trimesh.Mesh]) -> trimesh.Mesh:
+    def _add_raft(self, mesh: trimesh.Trimesh, support_mesh: Optional[trimesh.Trimesh]) -> trimesh.Trimesh:
         """
         Add rectangular raft base for improved bed adhesion.
 
