@@ -1,0 +1,17 @@
+# CI-only requirements. NOT for local development on the user's laptop --
+# this installs a CPU build of torch so engine tests can run on a free
+# GitHub Actions runner without GPU. Locally you should use:
+#   pip install -r requirements-client.txt   # to run scripts/run_job.py
+#   pip install -r requirements-dev.txt      # for tests/lint
+#
+# The CPU torch wheel comes from the PyTorch CPU index; install with:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0
+#   pip install -r requirements-ci.txt
+# (the workflow file does this for us).
+
+-r requirements-client.txt
+-r requirements-dev.txt
+
+# Engine-test dependencies that don't need a GPU.
+trimesh==4.0.0
+numpy<2

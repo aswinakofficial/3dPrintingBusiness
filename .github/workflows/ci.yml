@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: black --check .
+      - run: flake8 .
+
+  client-import:
+    name: client import check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: install client deps only
+        run: pip install -r requirements-client.txt
+      - name: import run_job and cleanup_old_jobs
+        # Proves the trigger scripts have no leaked heavy deps -- they must
+        # import on a machine that has not installed torch/trimesh/etc.
+        run: |
+          python -c "import sys; sys.path.insert(0, '.'); from scripts.run_job import submit_job, validate_input, AzureConfig, JobResult"
+          python -c "import sys; sys.path.insert(0, '.'); import scripts.cleanup_old_jobs"
+
+  tests:
+    name: tests (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: install CPU torch
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0
+      - name: install CI deps
+        run: pip install -r requirements-ci.txt
+      - run: pytest tests/ -v --cov=. --cov-report=term
+
+  terraform:
+    name: terraform fmt and validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate

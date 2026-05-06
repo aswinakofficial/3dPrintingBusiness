@@ -139,9 +139,15 @@ pytest tests/ -v
 # Style
 black .
 flake8 .
+
+# Install pre-commit hooks (runs black/flake8/terraform-fmt and a
+# tfstate-leak guard before every commit)
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
 ```
 
-CI (GitHub Actions) runs the same checks on every PR. CI is your primary pre-flight gate before paying for an ACI run.
+CI (GitHub Actions) runs lint, the trigger-script import check, the CPU test suite, and `terraform validate` on every PR. CI is your primary pre-flight gate before paying for an ACI run.
 
 ## License
 

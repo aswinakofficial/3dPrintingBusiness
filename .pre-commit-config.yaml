@@ -1,0 +1,53 @@
+# Run before every commit:
+#   pip install pre-commit && pre-commit install
+#
+# Run manually on all files:
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=2000]
+
+  - repo: https://github.com/psf/black
+    rev: 23.12.0
+    hooks:
+      - id: black
+        language_version: python3.10
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.86.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+
+  # Belt-and-suspenders for the .gitignore Terraform rules: refuse to commit
+  # any tfstate / tfplan / .terraform/ artefact. These can contain secrets and
+  # have leaked into history before -- block them at commit time.
+  - repo: local
+    hooks:
+      - id: forbid-tfstate
+        name: forbid tfstate / tfplan / .terraform/ in commits
+        entry: >-
+          bash -c '
+          if git diff --cached --name-only |
+            grep -E "(\\.tfstate|\\.tfstate\\.|tfplan|^\\.terraform/|/\\.terraform/|\\.terraform\\.lock\\.hcl)";
+          then
+            echo "Refusing to commit Terraform state/plan/cache files. See .gitignore.";
+            exit 1;
+          fi'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
