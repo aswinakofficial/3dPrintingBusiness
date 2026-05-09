@@ -13,9 +13,11 @@ azure-identity~=1.15
 azure-mgmt-containerinstance~=10.1
 azure-storage-blob~=12.19
 
-# Logging (matches utils/logger.py)
-loguru==0.7.2
-rich==13.7.0
+# Logging (matches utils/logger.py). Loose lower bounds -- the API surface
+# we use is stable, and tight pins clash with newer venvs that may have
+# heavier libraries (e.g. rembg pulling pillow >= 12).
+loguru>=0.7
+rich>=13
 
 # Local image validation (used by the --validate-only flag)
-pillow==10.1.0
+pillow>=10
