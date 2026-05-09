@@ -38,9 +38,14 @@ class TRELLIS2Engine(Engine):
             raise RuntimeError("CUDA not available — TRELLIS.2 requires NVIDIA GPU")
 
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        if total_gb < 14:
+            raise RuntimeError(f"GPU has only {total_gb:.1f}GB, need 14GB+ for TRELLIS.2")
         if total_gb < 24:
-            raise RuntimeError(f"GPU has only {total_gb:.1f}GB, need 24GB+ for TRELLIS.2")
-        logger.info(f"GPU memory OK: {total_gb:.1f}GB")
+            logger.warning(
+                f"GPU has {total_gb:.1f}GB — running at minimum VRAM, may OOM on complex scenes"
+            )
+        else:
+            logger.info(f"GPU memory OK: {total_gb:.1f}GB")
 
         try:
             from trellis2.pipelines import Trellis2ImageTo3DPipeline  # noqa: F401
