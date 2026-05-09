@@ -1,24 +1,30 @@
 # Docker / Container Build Reference
 
-This pipeline builds runtime images **in Azure Container Registry (ACR)** via `az acr build` — no local Docker daemon is required. Use this reference when changing engine code or runtime dependencies.
+This pipeline builds runtime images on **GitHub Actions** and pushes them to your Azure Container Registry. No local Docker daemon required. Use this reference when changing engine code or runtime dependencies.
 
-## Build images in ACR
+> **Why not `az acr build`?** It's restricted on free / trial / $200-credit subscriptions (`TasksOperationsNotAllowed`). GitHub Actions are free and unrestricted. See [docs/github-actions-setup.md](docs/github-actions-setup.md) for the one-time setup.
 
-From the repo root:
+## Trigger a build
+
+Two ways:
+
+**Automatic** — any push to `main` that touches `docker/**`, `engines/**`, `utils/**`, `main.py`, `config.yaml`, or `requirements-runtime.txt` fires the workflow.
+
+**Manual** — GitHub repo → **Actions → Build runtime images → Run workflow**. You can choose which image(s) to build.
+
+Build time: ~25–40 minutes the first time (downloads CUDA + PyTorch); ~5–10 minutes on subsequent runs (buildcache stored in ACR).
+
+## If `az acr build` *is* available on your subscription
+
+You can still use it directly — the Dockerfiles are unchanged:
 
 ```bash
-# TRELLIS.2 (single-image / multi-view 3D)
 az acr build --registry acr3dfigurinelabdev \
   --image 3dfigurine-trellis:latest \
   -f docker/Dockerfile.trellis .
-
-# Meshroom (photogrammetry from 10–50 images)
-az acr build --registry acr3dfigurinelabdev \
-  --image 3dfigurine-meshroom:latest \
-  -f docker/Dockerfile.meshroom .
 ```
 
-Build time on the ACR side is ~5–10 minutes for a clean build, ~1–2 minutes when only the application layers change.
+If this works for you, the GitHub Actions workflow is just a redundant safety net.
 
 ## Tagging a release
 

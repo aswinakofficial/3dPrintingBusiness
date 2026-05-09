@@ -1,0 +1,111 @@
+name: Build runtime images
+
+# Builds the TRELLIS and Meshroom Docker images on GitHub Actions and pushes
+# them to ACR. We use this instead of `az acr build` because some Azure
+# subscriptions (free tier, trial, $200 credit) restrict ACR Tasks with
+# TasksOperationsNotAllowed. GitHub-hosted runners are free for public repos
+# and generous for private ones.
+
+on:
+  workflow_dispatch:
+    inputs:
+      registry_name:
+        description: "ACR name (without .azurecr.io)"
+        required: false
+        default: "acr3dfigurinelabdev"
+      images:
+        description: "Which images to build"
+        required: false
+        default: "both"
+        type: choice
+        options: [both, trellis, meshroom]
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "engines/**"
+      - "utils/**"
+      - "main.py"
+      - "config.yaml"
+      - "requirements-runtime.txt"
+      - ".github/workflows/build-images.yml"
+
+env:
+  REGISTRY_NAME: ${{ inputs.registry_name || 'acr3dfigurinelabdev' }}
+
+permissions:
+  contents: read
+  id-token: write    # reserved for future OIDC migration
+
+jobs:
+  trellis:
+    if: ${{ github.event_name == 'push' || inputs.images == 'both' || inputs.images == 'trellis' }}
+    name: build trellis
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up runner disk
+        # ubuntu-latest runners have ~14 GB free by default. CUDA + torch +
+        # diffusers builds easily exceed that, so trim pre-installed tools.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          sudo apt-get -qq clean
+          docker system prune -a -f
+          df -h /
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name "$REGISTRY_NAME"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push TRELLIS image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.trellis
+          push: true
+          tags: ${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-trellis:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-trellis:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-trellis:buildcache,mode=max
+
+  meshroom:
+    if: ${{ github.event_name == 'push' || inputs.images == 'both' || inputs.images == 'meshroom' }}
+    name: build meshroom
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          sudo apt-get -qq clean
+          docker system prune -a -f
+          df -h /
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name "$REGISTRY_NAME"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Meshroom image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.meshroom
+          push: true
+          tags: ${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-meshroom:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-meshroom:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-meshroom:buildcache,mode=max
