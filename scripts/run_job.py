@@ -63,9 +63,10 @@ CONTAINER_BASE_CONFIG = {
 }
 
 
-_DEFAULT_RESOURCE_GROUP = "rg-3dfigurine-lab-dev-eastus"
+_DEFAULT_RESOURCE_GROUP = "rg-3dfigurine-lab-dev-westus"
 _DEFAULT_STORAGE_ACCOUNT = "st3dfigurinelabdev"
 _DEFAULT_CONTAINER_REGISTRY = "acr3dfigurinelabdev.azurecr.io"
+_DEFAULT_LOCATION = "westus"
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,7 @@ class AzureConfig:
     resource_group: str = _DEFAULT_RESOURCE_GROUP
     storage_account: str = _DEFAULT_STORAGE_ACCOUNT
     container_registry: str = _DEFAULT_CONTAINER_REGISTRY
-    location: str = "eastus"
+    location: str = _DEFAULT_LOCATION
 
     @classmethod
     def from_env(
@@ -85,6 +86,7 @@ class AzureConfig:
         resource_group: Optional[str] = None,
         storage_account: Optional[str] = None,
         container_registry: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> "AzureConfig":
         """Resolve config: explicit args > env vars > defaults."""
         return cls(
@@ -104,6 +106,10 @@ class AzureConfig:
             container_registry=(
                 container_registry
                 or os.getenv("AZURE_CONTAINER_REGISTRY", _DEFAULT_CONTAINER_REGISTRY)
+            ),
+            location=(
+                location
+                or os.getenv("AZURE_LOCATION", _DEFAULT_LOCATION)
             ),
         )
 
@@ -453,6 +459,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--storage-account", help="Override AZURE_STORAGE_ACCOUNT")
     p.add_argument("--registry", help="Override AZURE_CONTAINER_REGISTRY")
     p.add_argument("--subscription", help="Override AZURE_SUBSCRIPTION_ID")
+    p.add_argument(
+        "--location",
+        help="Azure region for the ACI container group (default: westus, override via AZURE_LOCATION).",
+    )
     return p
 
 
@@ -490,6 +500,7 @@ def main() -> int:
         resource_group=args.resource_group,
         storage_account=args.storage_account,
         container_registry=args.registry,
+        location=args.location,
     )
 
     try:
