@@ -66,6 +66,11 @@ RUN pip install --no-cache-dir -r requirements-runtime.txt
 RUN git clone --recursive https://github.com/microsoft/TRELLIS.2.git /opt/trellis2-repo
 RUN cd /opt/trellis2-repo && \
     pip install --no-cache-dir ./o-voxel --no-build-isolation
+# DINOv3ViTModel is not re-exported from the top-level transformers namespace;
+# patch the import to use the full module path.
+RUN sed -i \
+  's|from transformers import DINOv3ViTModel|from transformers.models.dinov3_vit.modeling_dinov3_vit import DINOv3ViTModel|' \
+  /opt/trellis2-repo/trellis2/modules/image_feature_extractor.py
 # Make trellis2 package importable
 ENV PYTHONPATH=/opt/trellis2-repo:${PYTHONPATH}
 
