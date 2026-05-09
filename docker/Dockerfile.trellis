@@ -53,7 +53,12 @@ RUN pip install --no-cache-dir \
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
     imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja trimesh \
-    "transformers>=5.0" tensorboard pandas lpips zstandard kornia timm
+    tensorboard pandas lpips zstandard kornia timm
+
+# transformers from GitHub HEAD: dinov3_vit landed 2026-05-08 and is not yet
+# in any PyPI release. Pin to the commit that introduced it.
+RUN pip install --no-cache-dir \
+    "git+https://github.com/huggingface/transformers.git@c9de1097eed992fe205f876415e7a7cfaa06be50"
 
 RUN pip install --no-cache-dir \
     git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
