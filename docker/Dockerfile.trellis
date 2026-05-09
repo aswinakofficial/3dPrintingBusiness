@@ -53,7 +53,7 @@ RUN pip install --no-cache-dir \
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
     imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja trimesh \
-    transformers tensorboard pandas lpips zstandard kornia timm
+    "transformers>=5.0" tensorboard pandas lpips zstandard kornia timm
 
 RUN pip install --no-cache-dir \
     git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
