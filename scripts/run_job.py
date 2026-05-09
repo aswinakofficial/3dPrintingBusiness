@@ -40,6 +40,7 @@ from azure.mgmt.containerinstance.models import (
     EnvironmentVariable,
     GpuResource,
     ResourceRequests,
+    ResourceRequirements,
 )
 from azure.storage.blob import BlobServiceClient
 
@@ -53,7 +54,13 @@ logger = get_logger()
 
 # ---------- Configuration ----------
 
-SUPPORTED_GPU_SKUS = ("V100", "T4")
+# ACI's valid GPU SKUs are K80 (deprecated), P100, V100. T4/A100 are NOT
+# available on classic ACI -- they're only on AKS or newer compute.
+#
+# On free / pay-as-you-go-with-credit subscriptions, Azure's default quota
+# is V100=0, P100=0, K80=6 in every region. K80 still works for existing
+# customers; we keep it as the smoke-test default until quota is bumped.
+SUPPORTED_GPU_SKUS = ("V100", "P100", "K80")
 DEFAULT_GPU_SKU = "V100"
 SUPPORTED_ENGINES = ("trellis", "meshroom")
 
@@ -301,10 +308,12 @@ class ACIJobRunner:
         container = Container(
             name=job_id,
             image=image,
-            resources=ResourceRequests(
-                cpu=cfg["cpu"],
-                memory_in_gb=cfg["memory_gb"],
-                gpu=GpuResource(count=1, sku=gpu_sku),
+            resources=ResourceRequirements(
+                requests=ResourceRequests(
+                    cpu=cfg["cpu"],
+                    memory_in_gb=cfg["memory_gb"],
+                    gpu=GpuResource(count=1, sku=gpu_sku),
+                ),
             ),
             environment_variables=[
                 EnvironmentVariable(name="INPUT_DIR", value="/input"),
@@ -488,7 +497,10 @@ def main() -> int:
     max_runtime = args.max_runtime_minutes
     cleanup = args.cleanup
     if args.smoke_test:
-        gpu_sku = "T4"
+        # K80 is the only GPU SKU available on default credit subscriptions
+        # (V100/P100 quota is 0 until you file a quota increase). Use it
+        # for smoke tests; override to V100 once quota is granted.
+        gpu_sku = os.getenv("SMOKE_TEST_GPU", "K80")
         max_runtime = min(args.max_runtime_minutes, 5)
         cleanup = True
         logger.info(
