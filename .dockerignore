@@ -52,6 +52,17 @@ logs/
 *.fbx
 *.gltf
 
+# Infrastructure-as-code -- not needed inside the runtime images. The
+# .terraform/ provider cache alone is ~200 MB and was the dominant cost
+# of the build context before this rule.
+terraform/
+ansible/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+
 # Documentation
 README.md
 *.md
