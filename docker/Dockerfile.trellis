@@ -67,6 +67,11 @@ RUN pip install --no-cache-dir \
 COPY requirements-runtime.txt .
 RUN pip install --no-cache-dir -r requirements-runtime.txt
 
+# nvdiffrast — required by trellis2 renderers (rasterisation)
+RUN git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/nvdiffrast && \
+    pip install --no-cache-dir /tmp/nvdiffrast --no-build-isolation && \
+    rm -rf /tmp/nvdiffrast
+
 # Clone TRELLIS.2 repo and install o_voxel CUDA extension + trellis2 package
 RUN git clone --recursive https://github.com/microsoft/TRELLIS.2.git /opt/trellis2-repo
 RUN cd /opt/trellis2-repo && \
