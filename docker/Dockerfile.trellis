@@ -84,16 +84,11 @@ RUN sed -i \
 # pipeline.json passes briaai/RMBG-2.0 (gated, requires approval) as the rembg
 # model; replace with the publicly available ZhengPeng7/BiRefNet which uses the
 # same architecture and works equally well for background removal.
+# The argument `model_name` appears alone on its line in from_pretrained() so a
+# simple sed on that token is sufficient.
 RUN sed -i \
-  's|AutoModelForImageSegmentation.from_pretrained(\n\s*model_name|AutoModelForImageSegmentation.from_pretrained(\n            "ZhengPeng7/BiRefNet"|' \
-  /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py || \
-  python3 -c "
-path='/opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py'
-txt=open(path).read()
-txt=txt.replace(
-    'AutoModelForImageSegmentation.from_pretrained(\n            model_name, trust_remote_code=True',
-    'AutoModelForImageSegmentation.from_pretrained(\n            \"ZhengPeng7/BiRefNet\", trust_remote_code=True'
-)
+  's|    model_name, trust_remote_code=True|    "ZhengPeng7/BiRefNet", trust_remote_code=True|' \
+  /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py
 open(path,'w').write(txt)
 "
 # Make trellis2 package importable
