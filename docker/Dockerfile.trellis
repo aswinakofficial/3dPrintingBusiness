@@ -89,8 +89,6 @@ RUN sed -i \
 RUN sed -i \
   's|    model_name, trust_remote_code=True|    "ZhengPeng7/BiRefNet", trust_remote_code=True|' \
   /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py
-open(path,'w').write(txt)
-"
 # Make trellis2 package importable
 ENV PYTHONPATH=/opt/trellis2-repo:${PYTHONPATH}
 
