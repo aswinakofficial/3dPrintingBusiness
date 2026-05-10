@@ -81,6 +81,11 @@ RUN cd /opt/trellis2-repo && \
 RUN sed -i \
   's|from transformers import DINOv3ViTModel|from transformers.models.dinov3_vit.modeling_dinov3_vit import DINOv3ViTModel|' \
   /opt/trellis2-repo/trellis2/modules/image_feature_extractor.py
+# DINOv3ViTModel structure: layers live at .model.layer (inside the encoder),
+# not at .layer directly on the model object. Fix the extract_features loop.
+RUN sed -i \
+  's|enumerate(self\.model\.layer)|enumerate(self.model.model.layer)|' \
+  /opt/trellis2-repo/trellis2/modules/image_feature_extractor.py
 # pipeline.json passes briaai/RMBG-2.0 (gated, requires approval) as the rembg
 # model; replace with the publicly available ZhengPeng7/BiRefNet which uses the
 # same architecture and works equally well for background removal.
