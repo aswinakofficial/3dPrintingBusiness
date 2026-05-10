@@ -1,51 +1,65 @@
 #!/usr/bin/env python3
 """
-3D Figurine Lab — Azure Container Instances job runner.
+3D Figurine Lab — Azure Container Apps job runner.
 
-User-facing CLI: uploads input images to blob storage, spins up an ACI
-container with GPU, monitors execution, and downloads the resulting STL.
+User-facing CLI: uploads input images to Azure Files, spins up a Container
+Apps Job with GPU, monitors execution, and downloads the resulting STL.
+
+Why Container Apps Jobs (not ACI):
+ACI's GpuSku enum (V100/P100/K80) has zero quota on free trial / $200-credit
+subscriptions. Container Apps' `Consumption-GPU-NC8as-T4` workload profile
+is available on the same subscriptions and is per-second billed.
 
 The core logic is exposed as `submit_job()` so the same pipeline can later
-be wrapped in an Azure Function, Container Apps Job, or webhook handler
-without rewriting.
+be wrapped in an Azure Function or webhook handler without rewriting.
 
 Usage:
     python scripts/run_job.py --engine trellis --input photo.jpg
-    python scripts/run_job.py --engine meshroom --input ./photos/ --gpu-sku T4
+    python scripts/run_job.py --engine meshroom --input ./photos/ --smoke-test
 
-Environment:
-    AZURE_SUBSCRIPTION_ID      Azure subscription (else discovered via `az account show`)
-    AZURE_RESOURCE_GROUP       Resource group (default: rg-3dfigurine-lab-dev-eastus)
-    AZURE_STORAGE_ACCOUNT      Storage account (default: st3dfigurinelabdev)
-    AZURE_CONTAINER_REGISTRY   ACR login server (default: acr3dfigurinelabdev.azurecr.io)
+Environment overrides (defaults match the dev terraform deployment):
+    AZURE_SUBSCRIPTION_ID            (else discovered via `az account show`)
+    AZURE_RESOURCE_GROUP             (default: rg-3dfigurine-lab-dev-westus)
+    AZURE_LOCATION                   (default: westus)
+    AZURE_CONTAINER_APPS_ENV         (default: cae-3dfigurine-lab-dev)
+    AZURE_FILE_STORAGE_ACCOUNT       (default: st3dfigurinelabfilesdev)
+    AZURE_FILE_SHARE                 (default: jobdata)
+    AZURE_FILE_STORAGE_NAME          (default: jobdata, the env-level storage)
+    AZURE_CONTAINER_REGISTRY         (default: acr3dfigurinelabdev.azurecr.io)
+    AZURE_WORKLOAD_PROFILE           (default: gpu-t4)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from azure.identity import DefaultAzureCredential
-from azure.mgmt.containerinstance import ContainerInstanceManagementClient
-from azure.mgmt.containerinstance.models import (
+from azure.mgmt.appcontainers import ContainerAppsAPIClient
+from azure.mgmt.appcontainers.models import (
     Container,
-    ContainerGroup,
-    EnvironmentVariable,
-    GpuResource,
-    ResourceRequests,
-    ResourceRequirements,
+    ContainerResources,
+    EnvironmentVar,
+    Job,
+    JobConfiguration,
+    JobConfigurationManualTriggerConfig,
+    JobTemplate,
+    RegistryCredentials,
+    Secret,
+    Volume,
+    VolumeMount,
 )
-from azure.storage.blob import BlobServiceClient
+from azure.storage.fileshare import ShareDirectoryClient, ShareFileClient
 
-# Project structured logger (JSON output, matches utils/logger.py format).
-# sys.path tweak lets the script run from any cwd via `python scripts/run_job.py`.
+# Project structured logger.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.logger import get_logger, setup_logger  # noqa: E402
 
@@ -54,26 +68,38 @@ logger = get_logger()
 
 # ---------- Configuration ----------
 
-# ACI's valid GPU SKUs are K80 (deprecated), P100, V100. T4/A100 are NOT
-# available on classic ACI -- they're only on AKS or newer compute.
-#
-# On free / pay-as-you-go-with-credit subscriptions, Azure's default quota
-# is V100=0, P100=0, K80=6 in every region. K80 still works for existing
-# customers; we keep it as the smoke-test default until quota is bumped.
-SUPPORTED_GPU_SKUS = ("V100", "P100", "K80")
-DEFAULT_GPU_SKU = "V100"
+# Container Apps' GPU offerings. Quota is per workload-profile-name and
+# generally available on free-trial subs (unlike ACI's V100/P100/K80).
+# A100 is also available (Consumption-GPU-NC24-A100) for heavier jobs.
+SUPPORTED_GPU_SKUS = ("T4", "A100")
+DEFAULT_GPU_SKU = "T4"
+
+# Map our short SKU name to the Azure workload-profile-type and the workload
+# profile we provisioned in the env. Adding A100 requires also adding the
+# corresponding workload profile via az / terraform.
+GPU_SKU_TO_PROFILE = {
+    "T4": "gpu-t4",
+    "A100": "gpu-a100",
+}
+
 SUPPORTED_ENGINES = ("trellis", "meshroom")
 
+# Resource sizing per engine. Container Apps T4 profile gives 8 vCPU / 56 GiB,
+# A100 gives 24 / 220 GiB. We request a fraction of that.
 CONTAINER_BASE_CONFIG = {
-    "meshroom": {"image_repo": "3dfigurine-meshroom", "cpu": 4.0, "memory_gb": 16.0},
-    "trellis": {"image_repo": "3dfigurine-trellis", "cpu": 4.0, "memory_gb": 16.0},
+    "meshroom": {"image_repo": "3dfigurine-meshroom", "cpu": 4.0, "memory": "16Gi"},
+    "trellis": {"image_repo": "3dfigurine-trellis", "cpu": 8.0, "memory": "56Gi"},
 }
 
 
 _DEFAULT_RESOURCE_GROUP = "rg-3dfigurine-lab-dev-westus"
-_DEFAULT_STORAGE_ACCOUNT = "st3dfigurinelabdev"
-_DEFAULT_CONTAINER_REGISTRY = "acr3dfigurinelabdev.azurecr.io"
 _DEFAULT_LOCATION = "westus"
+_DEFAULT_CONTAINER_APPS_ENV = "cae-3dfigurine-lab-dev"
+_DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfigurinelabfilesdev"
+_DEFAULT_FILE_SHARE = "jobdata"
+_DEFAULT_FILE_STORAGE_NAME = "jobdata"  # name registered in the env
+_DEFAULT_CONTAINER_REGISTRY = "acr3dfigurinelabdev.azurecr.io"
+_DEFAULT_WORKLOAD_PROFILE = "gpu-t4"
 
 
 @dataclass(frozen=True)
@@ -82,18 +108,25 @@ class AzureConfig:
 
     subscription_id: str
     resource_group: str = _DEFAULT_RESOURCE_GROUP
-    storage_account: str = _DEFAULT_STORAGE_ACCOUNT
-    container_registry: str = _DEFAULT_CONTAINER_REGISTRY
     location: str = _DEFAULT_LOCATION
+    container_apps_env: str = _DEFAULT_CONTAINER_APPS_ENV
+    file_storage_account: str = _DEFAULT_FILE_STORAGE_ACCOUNT
+    file_share: str = _DEFAULT_FILE_SHARE
+    file_storage_name: str = _DEFAULT_FILE_STORAGE_NAME
+    container_registry: str = _DEFAULT_CONTAINER_REGISTRY
+    workload_profile: str = _DEFAULT_WORKLOAD_PROFILE
 
     @classmethod
     def from_env(
         cls,
         subscription_id: Optional[str] = None,
         resource_group: Optional[str] = None,
-        storage_account: Optional[str] = None,
-        container_registry: Optional[str] = None,
         location: Optional[str] = None,
+        container_apps_env: Optional[str] = None,
+        file_storage_account: Optional[str] = None,
+        file_share: Optional[str] = None,
+        container_registry: Optional[str] = None,
+        workload_profile: Optional[str] = None,
     ) -> "AzureConfig":
         """Resolve config: explicit args > env vars > defaults."""
         return cls(
@@ -106,17 +139,31 @@ class AzureConfig:
                 resource_group
                 or os.getenv("AZURE_RESOURCE_GROUP", _DEFAULT_RESOURCE_GROUP)
             ),
-            storage_account=(
-                storage_account
-                or os.getenv("AZURE_STORAGE_ACCOUNT", _DEFAULT_STORAGE_ACCOUNT)
+            location=(
+                location or os.getenv("AZURE_LOCATION", _DEFAULT_LOCATION)
+            ),
+            container_apps_env=(
+                container_apps_env
+                or os.getenv("AZURE_CONTAINER_APPS_ENV", _DEFAULT_CONTAINER_APPS_ENV)
+            ),
+            file_storage_account=(
+                file_storage_account
+                or os.getenv("AZURE_FILE_STORAGE_ACCOUNT", _DEFAULT_FILE_STORAGE_ACCOUNT)
+            ),
+            file_share=(
+                file_share
+                or os.getenv("AZURE_FILE_SHARE", _DEFAULT_FILE_SHARE)
+            ),
+            file_storage_name=(
+                os.getenv("AZURE_FILE_STORAGE_NAME", _DEFAULT_FILE_STORAGE_NAME)
             ),
             container_registry=(
                 container_registry
                 or os.getenv("AZURE_CONTAINER_REGISTRY", _DEFAULT_CONTAINER_REGISTRY)
             ),
-            location=(
-                location
-                or os.getenv("AZURE_LOCATION", _DEFAULT_LOCATION)
+            workload_profile=(
+                workload_profile
+                or os.getenv("AZURE_WORKLOAD_PROFILE", _DEFAULT_WORKLOAD_PROFILE)
             ),
         )
 
@@ -143,11 +190,7 @@ SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def validate_input(input_path: Path, engine: str) -> list[Path]:
-    """Validate inputs locally with PIL. No Azure calls.
-
-    Raises ValueError / FileNotFoundError on issues so the CLI can exit
-    before paying for an ACI run. Returns the list of valid image paths.
-    """
+    """Validate inputs locally with PIL. No Azure calls."""
     from PIL import Image, UnidentifiedImageError  # lazy import
 
     if not input_path.exists():
@@ -196,13 +239,10 @@ def submit_job(
     max_runtime_minutes: int = 30,
     azure: Optional[AzureConfig] = None,
 ) -> JobResult:
-    """Upload, run, and (optionally) download a 3D-processing job on Azure ACI.
+    """Upload, run, and (optionally) download a 3D-processing job on Container Apps.
 
-    Reusable core. The CLI wraps it; future HTTP/event triggers (Azure
-    Function, Container Apps Job) can call it directly without rewriting.
-
-    `max_runtime_minutes` caps how long the job is allowed to run. If exceeded,
-    the container group is force-deleted and the call returns success=False.
+    Reusable core. The CLI wraps it; future HTTP/event triggers can call it
+    directly without rewriting.
     """
     if engine not in SUPPORTED_ENGINES:
         raise ValueError(f"Unknown engine: {engine}. Choose from {SUPPORTED_ENGINES}")
@@ -213,30 +253,33 @@ def submit_job(
     if max_runtime_minutes <= 0:
         raise ValueError("max_runtime_minutes must be positive")
 
-    # Local validation before paying for an ACI run.
     validate_input(input_path, engine)
 
     azure = azure or AzureConfig.from_env()
-    runner = ACIJobRunner(azure)
+    runner = JobsRunner(azure)
     job_id = job_id or f"{engine}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     logger.info(f"Starting job: {job_id} (max runtime {max_runtime_minutes} min)")
-    runner.upload_files(input_path)
-    runner.create_job(job_id, engine, gpu_sku=gpu_sku)
-    success = runner.monitor_job(job_id, max_wait=max_runtime_minutes * 60)
+    runner.upload_files(input_path, job_id)
+    runner.create_or_update_job(
+        job_id=job_id,
+        engine=engine,
+        gpu_sku=gpu_sku,
+        max_runtime_minutes=max_runtime_minutes,
+    )
+    execution_name = runner.start_execution(job_id)
+    success = runner.monitor_execution(
+        job_id, execution_name, max_wait=max_runtime_minutes * 60
+    )
 
     exit_code = 0 if success else 1
     out_dir: Optional[Path] = None
     if success and not skip_download:
-        out_dir = runner.download_output(output_dir)
+        out_dir = runner.download_output(job_id, output_dir / job_id)
 
-    # On failure, capture container logs locally before the container group
-    # gets deleted -- otherwise the failure reason is gone forever.
     if not success:
-        runner.dump_logs(job_id, output_dir / job_id / "container.log")
+        runner.dump_logs(job_id, execution_name, output_dir / job_id / "container.log")
 
-    # Cleanup: always tear down on explicit --cleanup, and additionally tear
-    # down on failure to avoid clutter (logs are already saved above).
     if cleanup or not success:
         runner.cleanup(job_id)
 
@@ -265,132 +308,323 @@ def _discover_subscription_id() -> str:
         ) from e
 
 
-class ACIJobRunner:
-    """Submits, monitors, and tears down ACI jobs."""
+def _az_json(args: list[str]) -> dict:
+    """Run `az` and return parsed JSON output."""
+    proc = subprocess.run(
+        ["az", *args, "-o", "json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
+class JobsRunner:
+    """Manages Container Apps Jobs with Azure Files I/O."""
 
     def __init__(self, azure: AzureConfig):
         self.azure = azure
         self.credential = DefaultAzureCredential()
-        self.aci_client = ContainerInstanceManagementClient(
-            self.credential, azure.subscription_id
-        )
-        self.blob_client = BlobServiceClient(
-            account_url=f"https://{azure.storage_account}.blob.core.windows.net",
-            credential=self.credential,
-        )
-        logger.info(f"ACI runner initialised (rg={azure.resource_group})")
+        self.aca_client = ContainerAppsAPIClient(self.credential, azure.subscription_id)
 
-    def upload_files(self, source: Path, container: str = "input") -> None:
-        client = self.blob_client.get_container_client(container)
+        # Storage account key for the file share. The Azure Files data plane
+        # doesn't fully support OAuth, so we use the account key.
+        self._file_key = self._fetch_file_storage_key()
+
+        # Cached lookups (filled on demand)
+        self._env_id: Optional[str] = None
+        self._acr_creds: Optional[tuple[str, str]] = None
+
+        logger.info(
+            f"Container Apps Jobs runner initialised "
+            f"(env={azure.container_apps_env}, profile={azure.workload_profile})"
+        )
+
+    def _fetch_file_storage_key(self) -> str:
+        """Fetch the Azure Files account's primary key via the management plane."""
+        result = _az_json([
+            "storage", "account", "keys", "list",
+            "--resource-group", self.azure.resource_group,
+            "--account-name", self.azure.file_storage_account,
+        ])
+        return result[0]["value"]
+
+    def _get_env_id(self) -> str:
+        if self._env_id is None:
+            env = self.aca_client.managed_environments.get(
+                self.azure.resource_group, self.azure.container_apps_env
+            )
+            self._env_id = env.id
+        return self._env_id
+
+    def _get_acr_credentials(self) -> tuple[str, str]:
+        """Get ACR admin user/password (admin_enabled=true on the registry)."""
+        if self._acr_creds is None:
+            acr_name = self.azure.container_registry.split(".")[0]
+            creds = _az_json([
+                "acr", "credential", "show", "--name", acr_name,
+            ])
+            user = creds["username"]
+            pwd = creds["passwords"][0]["value"]
+            self._acr_creds = (user, pwd)
+        return self._acr_creds
+
+    # ---------- File share I/O ----------
+
+    def _share_dir(self, dir_path: str) -> ShareDirectoryClient:
+        return ShareDirectoryClient(
+            account_url=f"https://{self.azure.file_storage_account}.file.core.windows.net",
+            share_name=self.azure.file_share,
+            directory_path=dir_path,
+            credential=self._file_key,
+        )
+
+    def _share_file(self, file_path: str) -> ShareFileClient:
+        return ShareFileClient(
+            account_url=f"https://{self.azure.file_storage_account}.file.core.windows.net",
+            share_name=self.azure.file_share,
+            file_path=file_path,
+            credential=self._file_key,
+        )
+
+    def _ensure_directory(self, dir_path: str) -> None:
+        """Create the directory tree (and parents) idempotently."""
+        from azure.core.exceptions import ResourceExistsError
+        parts = [p for p in dir_path.split("/") if p]
+        cumulative = ""
+        for part in parts:
+            cumulative = f"{cumulative}/{part}" if cumulative else part
+            try:
+                self._share_dir(cumulative).create_directory()
+            except ResourceExistsError:
+                pass
+
+    def upload_files(self, source: Path, job_id: str) -> None:
+        """Upload input files to inputs/<job-id>/ on the file share."""
+        target_prefix = f"inputs/{job_id}"
+        self._ensure_directory(target_prefix)
+        # Make sure the outputs dir exists so the container can write into it.
+        self._ensure_directory(f"outputs/{job_id}")
+
         if source.is_file():
-            with open(source, "rb") as fh:
-                client.upload_blob(source.name, fh, overwrite=True)
-            logger.info(f"Uploaded file: {source.name}")
+            self._upload_one(source, f"{target_prefix}/{source.name}")
         elif source.is_dir():
-            for path in source.rglob("*"):
+            for path in sorted(source.rglob("*")):
                 if path.is_file():
-                    blob_name = str(path.relative_to(source))
-                    with open(path, "rb") as fh:
-                        client.upload_blob(blob_name, fh, overwrite=True)
-                    logger.info(f"Uploaded: {blob_name}")
+                    rel = path.relative_to(source)
+                    # Flatten subdirectories for the container's --directory mode
+                    # (main.py recurses anyway).
+                    self._ensure_directory(str(Path(target_prefix) / rel.parent))
+                    self._upload_one(path, f"{target_prefix}/{rel.as_posix()}")
         else:
             raise FileNotFoundError(f"Path does not exist: {source}")
 
-    def create_job(self, job_id: str, engine: str, gpu_sku: str) -> None:
+    def _upload_one(self, local: Path, remote_path: str) -> None:
+        with open(local, "rb") as fh:
+            self._share_file(remote_path).upload_file(fh)
+        logger.info(f"Uploaded: {remote_path}")
+
+    # ---------- Job submission ----------
+
+    def create_or_update_job(
+        self,
+        job_id: str,
+        engine: str,
+        gpu_sku: str,
+        max_runtime_minutes: int,
+    ) -> None:
         if engine not in CONTAINER_BASE_CONFIG:
             raise ValueError(f"Unknown engine: {engine}")
         cfg = CONTAINER_BASE_CONFIG[engine]
         image = f"{self.azure.container_registry}/{cfg['image_repo']}:latest"
+        workload_profile = GPU_SKU_TO_PROFILE.get(gpu_sku, self.azure.workload_profile)
+
+        acr_user, acr_pwd = self._get_acr_credentials()
+        env_id = self._get_env_id()
 
         logger.info(
-            f"Creating ACI job: {job_id} (engine={engine}, gpu={gpu_sku})"
+            f"Creating Container Apps Job: {job_id} "
+            f"(engine={engine}, profile={workload_profile})"
         )
-        container = Container(
-            name=job_id,
-            image=image,
-            resources=ResourceRequirements(
-                requests=ResourceRequests(
-                    cpu=cfg["cpu"],
-                    memory_in_gb=cfg["memory_gb"],
-                    gpu=GpuResource(count=1, sku=gpu_sku),
-                ),
-            ),
-            environment_variables=[
-                EnvironmentVariable(name="INPUT_DIR", value="/input"),
-                EnvironmentVariable(name="OUTPUT_DIR", value="/output"),
-                EnvironmentVariable(name="JOB_ID", value=job_id),
-            ],
-        )
-        group = ContainerGroup(
-            location=self.azure.location,
-            containers=[container],
-            os_type="Linux",
-            restart_policy="Never",
-        )
-        self.aci_client.container_groups.begin_create_or_update(
-            self.azure.resource_group, job_id, group
-        ).wait()
-        logger.info(f"ACI job created: {job_id}")
 
-    def monitor_job(
-        self, job_id: str, poll_interval: int = 10, max_wait: int = 1800
+        job = Job(
+            location=self.azure.location,
+            environment_id=env_id,
+            workload_profile_name=workload_profile,
+            configuration=JobConfiguration(
+                trigger_type="Manual",
+                replica_timeout=max_runtime_minutes * 60,
+                replica_retry_limit=0,
+                manual_trigger_config=JobConfigurationManualTriggerConfig(
+                    replica_completion_count=1,
+                    parallelism=1,
+                ),
+                registries=[
+                    RegistryCredentials(
+                        server=self.azure.container_registry,
+                        username=acr_user,
+                        password_secret_ref="acr-pwd",
+                    ),
+                ],
+                secrets=[Secret(name="acr-pwd", value=acr_pwd)],
+            ),
+            template=JobTemplate(
+                containers=[
+                    Container(
+                        name=engine,
+                        image=image,
+                        resources=ContainerResources(
+                            cpu=cfg["cpu"],
+                            memory=cfg["memory"],
+                        ),
+                        env=[
+                            EnvironmentVar(name="JOB_ID", value=job_id),
+                            EnvironmentVar(name="ENGINE", value=engine),
+                            EnvironmentVar(
+                                name="HF_HOME",
+                                value="/workspace/.cache/huggingface",
+                            ),
+                            EnvironmentVar(
+                                name="TRANSFORMERS_CACHE",
+                                value="/workspace/.cache/huggingface",
+                            ),
+                            EnvironmentVar(
+                                name="HF_TOKEN",
+                                value=os.getenv("HF_TOKEN", ""),
+                            ),
+                        ],
+                        # Override the Dockerfile's CMD so the entrypoint
+                        # script runs main.py with our --directory and --output.
+                        # (Both Dockerfiles ENTRYPOINT to entrypoint.sh which
+                        # exec's whatever we pass as args.)
+                        args=[
+                            "python3",
+                            "main.py",
+                            "--engine",
+                            engine,
+                            "--directory",
+                            f"/workspace/inputs/{job_id}",
+                            "--output",
+                            f"/workspace/outputs/{job_id}",
+                        ],
+                        volume_mounts=[
+                            VolumeMount(
+                                volume_name="jobdata",
+                                mount_path="/workspace",
+                            ),
+                        ],
+                    ),
+                ],
+                volumes=[
+                    Volume(
+                        name="jobdata",
+                        storage_type="AzureFile",
+                        storage_name=self.azure.file_storage_name,
+                    ),
+                ],
+            ),
+        )
+
+        poller = self.aca_client.jobs.begin_create_or_update(
+            self.azure.resource_group, job_id, job
+        )
+        poller.result()
+        logger.info(f"Job spec ready: {job_id}")
+
+    def start_execution(self, job_id: str) -> str:
+        poller = self.aca_client.jobs.begin_start(self.azure.resource_group, job_id)
+        execution = poller.result()
+        logger.info(f"Started execution: {execution.name}")
+        return execution.name
+
+    def monitor_execution(
+        self,
+        job_id: str,
+        execution_name: str,
+        poll_interval: int = 10,
+        max_wait: int = 1800,
     ) -> bool:
-        """Poll until the container reaches a terminal state or max_wait
-        elapses. Returns True on exit_code == 0, False otherwise."""
+        """Poll the execution until terminal state or max_wait elapses."""
         start = time.time()
+        last_state = None
         while time.time() - start < max_wait:
             try:
-                grp = self.aci_client.container_groups.get(
-                    self.azure.resource_group, job_id
+                execution = self.aca_client.job_execution(
+                    self.azure.resource_group, job_id, execution_name
                 )
-                state = grp.containers[0].instance_view.current_state.state
-                elapsed = int(time.time() - start)
-                logger.info(f"Job {job_id} state: {state} ({elapsed}s elapsed)")
-                if state == "Terminated":
-                    code = grp.containers[0].instance_view.current_state.exit_code
-                    logger.info(f"Job {job_id} exited with code {code}")
-                    return code == 0
+                state = (
+                    execution.properties.status
+                    if hasattr(execution, "properties") and execution.properties
+                    else getattr(execution, "status", None)
+                )
+                if state != last_state:
+                    elapsed = int(time.time() - start)
+                    logger.info(
+                        f"Execution {execution_name}: {state} ({elapsed}s elapsed)"
+                    )
+                    last_state = state
+                if state in ("Succeeded", "Failed", "Stopped", "Degraded"):
+                    return state == "Succeeded"
                 time.sleep(poll_interval)
             except Exception as e:
                 logger.warning(f"Monitor error: {e}")
                 time.sleep(poll_interval)
         logger.error(
-            f"Job {job_id} exceeded {max_wait}s runtime cap; container will be deleted"
+            f"Execution {execution_name} exceeded {max_wait}s runtime cap"
         )
         return False
 
-    def download_output(
-        self, output_dir: Path, container: str = "output"
-    ) -> Path:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        client = self.blob_client.get_container_client(container)
-        for blob in client.list_blobs():
-            data = client.download_blob(blob.name).readall()
-            target = output_dir / blob.name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-            logger.info(f"Downloaded: {target}")
-        return output_dir
+    def download_output(self, job_id: str, target: Path) -> Path:
+        """Download outputs/<job-id>/* from the share into `target`."""
+        target.mkdir(parents=True, exist_ok=True)
+        remote_prefix = f"outputs/{job_id}"
+        self._download_dir_recursive(remote_prefix, target)
+        return target
+
+    def _download_dir_recursive(self, remote_dir: str, local_dir: Path) -> None:
+        local_dir.mkdir(parents=True, exist_ok=True)
+        dir_client = self._share_dir(remote_dir)
+        for entry in dir_client.list_directories_and_files():
+            rel_name = entry["name"]
+            remote_path = f"{remote_dir}/{rel_name}"
+            local_path = local_dir / rel_name
+            if entry.get("is_directory"):
+                self._download_dir_recursive(remote_path, local_path)
+            else:
+                data = self._share_file(remote_path).download_file().readall()
+                local_path.write_bytes(data)
+                logger.info(f"Downloaded: {local_path}")
 
     def cleanup(self, job_id: str) -> None:
-        logger.info(f"Cleaning up job: {job_id}")
+        """Delete the Job resource. Doesn't touch the file share content
+        (kept for inspection)."""
+        logger.info(f"Cleaning up job spec: {job_id}")
         try:
-            self.aci_client.container_groups.begin_delete(
+            self.aca_client.jobs.begin_delete(
                 self.azure.resource_group, job_id
-            ).wait()
+            ).result()
             logger.info(f"Deleted job: {job_id}")
         except Exception as e:
             logger.warning(f"Could not delete job {job_id}: {e}")
 
-    def dump_logs(self, job_id: str, target: Path) -> None:
-        """Save the container's stdout/stderr to a local file. Best-effort:
-        if the container is gone or unreachable, log a warning and continue."""
+    def dump_logs(self, job_id: str, execution_name: str, target: Path) -> None:
+        """Best-effort: pull the container logs via az CLI (Log Analytics)."""
+        target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            log_obj = self.aci_client.containers.list_logs(
-                self.azure.resource_group, job_id, job_id
+            result = subprocess.run(
+                [
+                    "az", "containerapp", "job", "logs", "show",
+                    "--name", job_id,
+                    "--resource-group", self.azure.resource_group,
+                    "--container", job_id.split("-")[0],  # 'trellis' / 'meshroom'
+                    "--follow", "false",
+                    "-o", "tsv",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(log_obj.content or "")
+            target.write_text(result.stdout or result.stderr)
             logger.info(f"Saved container logs to {target}")
         except Exception as e:
             logger.warning(f"Could not fetch logs for {job_id}: {e}")
@@ -401,7 +635,7 @@ class ACIJobRunner:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Submit 3D processing jobs to Azure Container Instances",
+        description="Submit 3D processing jobs to Azure Container Apps Jobs",
     )
     p.add_argument(
         "--engine",
@@ -429,7 +663,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--gpu-sku",
         choices=SUPPORTED_GPU_SKUS,
         default=DEFAULT_GPU_SKU,
-        help=f"GPU SKU (default: {DEFAULT_GPU_SKU}). T4 is cheaper, V100 is faster.",
+        help=f"GPU type (default: {DEFAULT_GPU_SKU}). T4=cheap, A100=fast/big.",
     )
     p.add_argument(
         "--skip-download",
@@ -439,38 +673,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--cleanup",
         action="store_true",
-        help="Delete container group after job completes",
+        help="Delete the Job resource after completion",
     )
     p.add_argument(
         "--max-runtime-minutes",
         type=int,
         default=30,
-        help="Hard cap on job runtime (default: 30). Container is force-deleted on overrun.",
+        help="Hard cap on job runtime (default: 30).",
     )
     p.add_argument(
         "--smoke-test",
         action="store_true",
         help=(
-            "Sanity-check run: forces --gpu-sku T4, --max-runtime-minutes 5, "
-            "--cleanup. Use this to verify a code change cheaply before "
-            "submitting a full job."
+            "Cheap sanity-check run: forces --gpu-sku T4, "
+            "--max-runtime-minutes 10, --cleanup."
         ),
     )
     p.add_argument(
         "--validate-only",
         action="store_true",
-        help=(
-            "Run client-side input validation (PIL, image counts) and exit "
-            "without contacting Azure. Useful before paying for an ACI run."
-        ),
+        help="Run client-side input validation and exit (no Azure calls).",
     )
     p.add_argument("--resource-group", help="Override AZURE_RESOURCE_GROUP")
-    p.add_argument("--storage-account", help="Override AZURE_STORAGE_ACCOUNT")
     p.add_argument("--registry", help="Override AZURE_CONTAINER_REGISTRY")
     p.add_argument("--subscription", help="Override AZURE_SUBSCRIPTION_ID")
+    p.add_argument("--location", help="Override AZURE_LOCATION")
     p.add_argument(
-        "--location",
-        help="Azure region for the ACI container group (default: westus, override via AZURE_LOCATION).",
+        "--workload-profile",
+        help="Override AZURE_WORKLOAD_PROFILE (default: gpu-t4).",
     )
     return p
 
@@ -482,26 +712,23 @@ def main() -> int:
 
     args = _build_parser().parse_args()
 
-    # --validate-only: client-side checks only, no Azure interaction.
     if args.validate_only:
         try:
             validate_input(args.input, args.engine)
         except (FileNotFoundError, ValueError) as e:
             print(f"Validation failed: {e}", file=sys.stderr)
             return 2
-        logger.info("Validation passed; no ACI job submitted (--validate-only).")
+        logger.info("Validation passed; no job submitted (--validate-only).")
         return 0
 
-    # --smoke-test: cheapest-possible run with hard guardrails.
     gpu_sku = args.gpu_sku
     max_runtime = args.max_runtime_minutes
     cleanup = args.cleanup
     if args.smoke_test:
-        # K80 is the only GPU SKU available on default credit subscriptions
-        # (V100/P100 quota is 0 until you file a quota increase). Use it
-        # for smoke tests; override to V100 once quota is granted.
-        gpu_sku = os.getenv("SMOKE_TEST_GPU", "K80")
-        max_runtime = min(args.max_runtime_minutes, 5)
+        # T4 is the cheap GPU on Container Apps. Bump the timeout to 10 min
+        # so first-time HuggingFace model downloads have a chance.
+        gpu_sku = "T4"
+        max_runtime = min(args.max_runtime_minutes, 10)
         cleanup = True
         logger.info(
             f"Smoke-test mode: gpu={gpu_sku}, max_runtime={max_runtime}min, cleanup=True"
@@ -510,9 +737,9 @@ def main() -> int:
     azure = AzureConfig.from_env(
         subscription_id=args.subscription,
         resource_group=args.resource_group,
-        storage_account=args.storage_account,
-        container_registry=args.registry,
         location=args.location,
+        container_registry=args.registry,
+        workload_profile=args.workload_profile,
     )
 
     try:
@@ -541,11 +768,6 @@ def main() -> int:
     logger.info(f"Job {result.job_id} completed successfully")
     if result.output_dir:
         logger.info(f"Outputs available in {result.output_dir}")
-    elif not args.cleanup:
-        logger.info(
-            f"To cleanup: az container delete --resource-group {azure.resource_group} "
-            f"--name {result.job_id}"
-        )
     return 0
 
 
