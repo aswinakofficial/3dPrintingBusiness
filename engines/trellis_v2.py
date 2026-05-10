@@ -101,7 +101,10 @@ class TRELLIS2Engine(Engine):
         )
         start = time.time()
         try:
-            result = self.pipeline.run(image)
+            # Mixed fp16/bf16 models require autocast so float32 tensors
+            # (e.g. DINOv3 output) are promoted to match each layer's dtype.
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                result = self.pipeline.run(image)
             mesh = result[0]
             mesh.simplify(16777216)
         except Exception as exc:
