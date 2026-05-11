@@ -13,8 +13,8 @@ ENV TZ=UTC
 ENV CUDA_HOME=/usr/local/cuda
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 ENV PATH=${CUDA_HOME}/bin:${PATH}
-# A100=8.0, A10=8.6, H100=9.0 — matches our cloud workload profile (A100)
-ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
+# T4=7.5 (smoke-test GPU), A100=8.0, A10=8.6, H100=9.0 (prod)
+ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;9.0"
 
 # System dependencies (build tools + image/3D libs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -49,6 +49,9 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir \
     torch==2.6.0 torchvision==0.21.0 \
     --index-url https://download.pytorch.org/whl/cu124
+
+# flash-attn — required by TRELLIS.2 DiT attention (unconditional import, compiles from source)
+RUN pip install --no-cache-dir flash-attn --no-build-isolation
 
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
