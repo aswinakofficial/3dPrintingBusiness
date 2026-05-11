@@ -51,7 +51,9 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu124
 
 # flash-attn — required by TRELLIS.2 DiT attention (unconditional import, compiles from source)
-RUN pip install --no-cache-dir flash-attn --no-build-isolation
+# psutil is a build-time dep of flash-attn's setup.py; must pre-install under --no-build-isolation
+RUN pip install --no-cache-dir psutil && \
+    pip install --no-cache-dir flash-attn --no-build-isolation
 
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
