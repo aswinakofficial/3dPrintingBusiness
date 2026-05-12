@@ -106,6 +106,9 @@ class TRELLIS2Engine(Engine):
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 result = self.pipeline.run(image, preprocess_image=False)
             mesh = result[0]
+            # attrs come out of autocast as fp16; grid_sample_3d inside simplify()
+            # creates a float32 buffer and index-puts into it → dtype mismatch.
+            mesh.attrs = mesh.attrs.float()
             mesh.simplify(16777216)
         except Exception as exc:
             torch.cuda.empty_cache()
