@@ -103,13 +103,18 @@ class TRELLIS2Engine(Engine):
         try:
             # Mixed fp16/bf16 models require autocast so float32 tensors
             # (e.g. DINOv3 output) are promoted to match each layer's dtype.
+            logger.info("Starting pipeline.run()...")
             with torch.autocast(device_type="cuda", dtype=torch.float16):
-                result = self.pipeline.run(image, preprocess_image=False, pipeline_type="512")
+                result = self.pipeline.run(image, preprocess_image=False)
+            logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
             # attrs come out of autocast as fp16; grid_sample_3d inside simplify()
             # creates a float32 buffer and index-puts into it → dtype mismatch.
             mesh.attrs = mesh.attrs.float()
+            logger.info("Starting mesh.simplify()...")
+            t_simplify = time.time()
             mesh.simplify(16777216)
+            logger.info(f"mesh.simplify() done in {time.time() - t_simplify:.1f}s")
         except Exception as exc:
             torch.cuda.empty_cache()
             raise RuntimeError(f"TRELLIS.2 inference failed: {exc}")
