@@ -59,6 +59,12 @@ RUN pip install --no-cache-dir xformers \
 # Sparse config accepts: xformers | flash_attn | flash_attn_3 (not sdpa).
 ENV ATTN_BACKEND=xformers
 
+# spconv — sparse convolution backend for TRELLIS.2 SLat flow models.
+# flex_gemm (default) uses a Triton 2.x kernel (tl.dot accumulator arg) that
+# is incompatible with Triton 3.2.0, which ships with PyTorch 2.6.0.
+RUN pip install --no-cache-dir spconv-cu124
+ENV SPARSE_CONV_BACKEND=spconv
+
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
     imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja trimesh \
