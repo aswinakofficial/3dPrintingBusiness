@@ -50,13 +50,11 @@ RUN pip install --no-cache-dir \
     torch==2.6.0 torchvision==0.21.0 \
     --index-url https://download.pytorch.org/whl/cu124
 
-# flash-attn — required by TRELLIS.2 DiT attention (unconditional import, compiles from source)
-# PyTorch whl is built with cxx11abi=0 (old ABI); force the same for flash-attn or symbols mismatch.
-# psutil is needed by flash-attn setup.py at metadata-generation time under --no-build-isolation.
-RUN pip install --no-cache-dir psutil && \
-    CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
-    CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
-    pip install --no-cache-dir flash-attn --no-build-isolation
+# flash-attn — pre-built wheel for PyTorch 2.6 + CUDA 12 + Python 3.10, old ABI (cxx11abiFALSE)
+# Matches PyTorch whl's cxx11abi=0; compiling from source on Ubuntu 22.04 defaults to new ABI
+# causing undefined symbol errors against PyTorch's libtorch.so.
+RUN pip install --no-cache-dir \
+    "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
 
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
