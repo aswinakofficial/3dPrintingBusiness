@@ -104,7 +104,7 @@ class TRELLIS2Engine(Engine):
             # Mixed fp16/bf16 models require autocast so float32 tensors
             # (e.g. DINOv3 output) are promoted to match each layer's dtype.
             with torch.autocast(device_type="cuda", dtype=torch.float16):
-                result = self.pipeline.run(image, preprocess_image=False)
+                result = self.pipeline.run(image, preprocess_image=False, pipeline_type="512")
             mesh = result[0]
             # attrs come out of autocast as fp16; grid_sample_3d inside simplify()
             # creates a float32 buffer and index-puts into it → dtype mismatch.
