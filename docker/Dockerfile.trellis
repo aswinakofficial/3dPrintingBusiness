@@ -50,11 +50,14 @@ RUN pip install --no-cache-dir \
     torch==2.6.0 torchvision==0.21.0 \
     --index-url https://download.pytorch.org/whl/cu124
 
-# flash-attn — pre-built wheel for PyTorch 2.6 + CUDA 12 + Python 3.10, old ABI (cxx11abiFALSE)
-# Matches PyTorch whl's cxx11abi=0; compiling from source on Ubuntu 22.04 defaults to new ABI
-# causing undefined symbol errors against PyTorch's libtorch.so.
-RUN pip install --no-cache-dir \
-    "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
+# xformers — attention backend for both dense and sparse TRELLIS.2 attention.
+# flash-attn has persistent ABI symbol mismatches against PyTorch's libtorch.so;
+# xformers pre-built wheels from the same PyTorch whl index are ABI-matched.
+RUN pip install --no-cache-dir xformers \
+    --index-url https://download.pytorch.org/whl/cu124
+# Switch both dense and sparse attention away from flash_attn to xformers.
+# Sparse config accepts: xformers | flash_attn | flash_attn_3 (not sdpa).
+ENV ATTN_BACKEND=xformers
 
 # TRELLIS.2 basic dependencies (from setup.sh --basic)
 RUN pip install --no-cache-dir \
