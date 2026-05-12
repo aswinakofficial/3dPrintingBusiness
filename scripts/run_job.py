@@ -725,10 +725,10 @@ def main() -> int:
     max_runtime = args.max_runtime_minutes
     cleanup = args.cleanup
     if args.smoke_test:
-        # T4 is the cheap GPU on Container Apps. Bump the timeout to 10 min
+        # T4 is the cheap GPU on Container Apps. Bump the timeout to 20 min
         # so first-time HuggingFace model downloads have a chance.
         gpu_sku = "T4"
-        max_runtime = min(args.max_runtime_minutes, 10)
+        max_runtime = min(args.max_runtime_minutes, 20)
         cleanup = True
         logger.info(
             f"Smoke-test mode: gpu={gpu_sku}, max_runtime={max_runtime}min, cleanup=True"

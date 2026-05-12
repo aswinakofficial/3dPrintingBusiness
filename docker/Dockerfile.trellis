@@ -110,8 +110,8 @@ RUN sed -i \
   's|    model_name, trust_remote_code=True|    "ZhengPeng7/BiRefNet", trust_remote_code=True|' \
   /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py
 # spconv auto-tuner (ConvTunerSimple) fails on T4 (sm_75) — no pre-profiled kernels.
-# Default to 'native' algo (generic CUDA scatter/gather, works on any GPU).
-RUN sed -i "s/SPCONV_ALGO = 'auto'/SPCONV_ALGO = 'native'/" \
+# Use implicit_gemm (tensor-core GEMM, 3-5x faster than native scatter/gather on T4).
+RUN sed -i "s/SPCONV_ALGO = 'auto'/SPCONV_ALGO = 'implicit_gemm'/" \
     /opt/trellis2-repo/trellis2/modules/sparse/conv/config.py
 # Make trellis2 package importable
 ENV PYTHONPATH=/opt/trellis2-repo:${PYTHONPATH}
