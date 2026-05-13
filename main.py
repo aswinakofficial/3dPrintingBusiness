@@ -644,9 +644,16 @@ Examples:
                 raise ValueError(f"No images found in {args.directory}")
             logger.info(f"Found {len(image_paths)} images in {args.directory}")
 
-        # Build post-processing config
+        # Build post-processing config.
+        # All repair-intensive operations are gated on --repair so that the
+        # default (no flag) is a fast pass-through (no hole fill, no degenerate
+        # face removal) — important for voxel meshes from TRELLIS which are
+        # non-manifold by nature and trigger very slow validity checks.
         pp_config = PostProcessingConfig(
             repair_non_manifold=args.repair,
+            remove_degenerate_faces=args.repair,
+            remove_infinite_values=args.repair,
+            max_hole_size=30 if args.repair else 0,
             hollow_enabled=args.hollow,
             wall_thickness=args.wall_thickness,
             generate_supports=args.supports,
