@@ -667,8 +667,11 @@ class PostProcessingPipeline:
         logger.info(f"Processing mesh: {mesh_path}")
 
         try:
-            # Load mesh
+            # Load mesh — GLBs from o_voxel come back as trimesh.Scene (multi-geometry).
+            # Concatenate all geometries into a single Trimesh so downstream code works.
             mesh = trimesh.load(mesh_path)
+            if isinstance(mesh, trimesh.Scene):
+                mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
             logger.info(f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
 
             # Stage 1: Repair
