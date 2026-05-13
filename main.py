@@ -607,8 +607,11 @@ Examples:
     args = parser.parse_args()
 
     try:
-        # Setup logging
-        logs_dir = Path(args.config).parent / "logs"
+        # Setup logging — write to output dir when set (Azure Files share, persists after container exit)
+        if args.output:
+            logs_dir = Path(args.output) / "logs"
+        else:
+            logs_dir = Path(args.config).parent / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         setup_logger(
             level="DEBUG" if args.verbose else "INFO",

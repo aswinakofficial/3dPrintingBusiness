@@ -105,7 +105,14 @@ class TRELLIS2Engine(Engine):
             # (e.g. DINOv3 output) are promoted to match each layer's dtype.
             logger.info("Starting pipeline.run()...")
             with torch.autocast(device_type="cuda", dtype=torch.float16):
-                result = self.pipeline.run(image, preprocess_image=False)
+                result = self.pipeline.run(
+                    image,
+                    preprocess_image=False,
+                    pipeline_type="512",
+                    sparse_structure_sampler_params={"steps": 6},
+                    shape_slat_sampler_params={"steps": 6},
+                    tex_slat_sampler_params={"steps": 6},
+                )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
             # attrs come out of autocast as fp16; grid_sample_3d inside simplify()

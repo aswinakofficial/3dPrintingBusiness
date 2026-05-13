@@ -279,6 +279,11 @@ def submit_job(
 
     if not success:
         runner.dump_logs(job_id, execution_name, output_dir / job_id / "container.log")
+        # Also pull any files written to the share (log files, partial output)
+        try:
+            runner.download_output(job_id, output_dir / job_id)
+        except Exception as e:
+            logger.warning(f"Could not download share files on failure: {e}")
 
     if cleanup or not success:
         runner.cleanup(job_id)
