@@ -139,7 +139,10 @@ class TRELLIS2Engine(Engine):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = output_dir / f"trellis_{timestamp}_raw.glb"
 
+        # texture_size=1024 and remesh=False for fast export on T4.
+        # 4096 + remesh took >16 min (baking scales with texel count).
         logger.info("Exporting GLB via o_voxel...")
+        t_glb = time.time()
         glb = o_voxel.postprocess.to_glb(
             vertices=raw_mesh.vertices,
             faces=raw_mesh.faces,
@@ -148,13 +151,12 @@ class TRELLIS2Engine(Engine):
             attr_layout=raw_mesh.layout,
             voxel_size=raw_mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-            decimation_target=1000000,
-            texture_size=4096,
-            remesh=True,
-            remesh_band=1,
-            remesh_project=0,
+            decimation_target=200000,
+            texture_size=1024,
+            remesh=False,
             verbose=True,
         )
+        logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s")
         glb.export(str(output_file), extension_webp=True)
         logger.info(f"Exported TRELLIS.2 output to {output_file}")
         return str(output_file)
