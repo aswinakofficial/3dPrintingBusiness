@@ -95,9 +95,12 @@ class TRELLIS2Engine(Engine):
 
         self._load_pipeline()
 
-        image = preprocessed_images[0]
+        # Pass all images for multi-view reconstruction; single image falls back to one-view mode.
+        images = preprocessed_images if len(preprocessed_images) > 1 else preprocessed_images[0]
+        n = len(preprocessed_images)
+        first = preprocessed_images[0]
         logger.info(
-            f"Running TRELLIS.2 inference on {image.size[0]}x{image.size[1]} image..."
+            f"Running TRELLIS.2 inference on {n} image(s) at {first.size[0]}x{first.size[1]}..."
         )
         start = time.time()
         try:
@@ -106,7 +109,7 @@ class TRELLIS2Engine(Engine):
             logger.info("Starting pipeline.run()...")
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 result = self.pipeline.run(
-                    image,
+                    images,
                     preprocess_image=False,
                     pipeline_type="1024",
                 )
@@ -163,7 +166,7 @@ class TRELLIS2Engine(Engine):
             voxel_size=raw_mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=200000,
-            texture_size=4096,
+            texture_size=2048,
             remesh=False,
             verbose=True,
         )
