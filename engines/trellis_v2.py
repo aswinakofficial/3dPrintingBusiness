@@ -108,10 +108,7 @@ class TRELLIS2Engine(Engine):
                 result = self.pipeline.run(
                     image,
                     preprocess_image=False,
-                    pipeline_type="512",
-                    sparse_structure_sampler_params={"steps": 6},
-                    shape_slat_sampler_params={"steps": 6},
-                    tex_slat_sampler_params={"steps": 6},
+                    pipeline_type="1024",
                 )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
@@ -166,7 +163,7 @@ class TRELLIS2Engine(Engine):
             voxel_size=raw_mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=200000,
-            texture_size=1024,
+            texture_size=4096,
             remesh=False,
             verbose=True,
         )
