@@ -126,7 +126,21 @@ class TRELLIS2Engine(Engine):
             torch.cuda.empty_cache()
             raise RuntimeError(f"TRELLIS.2 inference failed: {exc}")
 
+        vram_used = torch.cuda.memory_allocated() / 1e9
+        vram_reserved = torch.cuda.memory_reserved() / 1e9
+        logger.info(f"VRAM after inference: {vram_used:.1f}GB allocated, {vram_reserved:.1f}GB reserved")
+
+        # Move the pipeline off GPU before texture baking — nvdiffrast needs VRAM too.
+        # The 4B model keeps ~8 GB in VRAM after empty_cache(); moving to CPU frees it.
+        try:
+            self.pipeline.cpu()
+            logger.info("Pipeline moved to CPU")
+        except Exception as e:
+            logger.warning(f"Could not offload pipeline to CPU: {e}")
+        import gc; gc.collect()
         torch.cuda.empty_cache()
+        vram_used = torch.cuda.memory_allocated() / 1e9
+        logger.info(f"VRAM after pipeline offload: {vram_used:.1f}GB allocated")
         logger.info(f"Inference complete in {time.time() - start:.1f}s")
         return mesh
 
@@ -141,7 +155,7 @@ class TRELLIS2Engine(Engine):
 
         # texture_size=1024 and remesh=False for fast export on T4.
         # 4096 + remesh took >16 min (baking scales with texel count).
-        logger.info("Exporting GLB via o_voxel...")
+        logger.info(f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)...")
         t_glb = time.time()
         glb = o_voxel.postprocess.to_glb(
             vertices=raw_mesh.vertices,
@@ -156,7 +170,7 @@ class TRELLIS2Engine(Engine):
             remesh=False,
             verbose=True,
         )
-        logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s")
+        logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)")
         glb.export(str(output_file), extension_webp=True)
         logger.info(f"Exported TRELLIS.2 output to {output_file}")
         return str(output_file)
