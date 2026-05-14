@@ -107,13 +107,13 @@ class MeshRepair:
                     logger.info(f"Filled {holes_filled} holes")
 
             # Final validation
-            if not mesh.is_valid:
+            if not getattr(mesh, 'is_valid', True):
                 logger.warning("Mesh still has validity issues after repair, attempting additional fixes")
                 mesh.remove_unreferenced_vertices()
                 logger.debug("Removed unreferenced vertices")
 
             logger.info(
-                f"Repair complete: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces, valid={mesh.is_valid}"
+                f"Repair complete: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces, valid={getattr(mesh, 'is_valid', 'unknown')}"
             )
 
             return mesh
