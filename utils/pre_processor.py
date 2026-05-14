@@ -195,9 +195,12 @@ class ImagePreprocessor:
         try:
             import rembg
 
-            # Convert to RGBA to apply alpha mask
-            img_array = rembg.remove(image, model_name=model_name)
-            return Image.fromarray(img_array, "RGBA")
+            session = rembg.new_session(model_name)
+            result = rembg.remove(image, session=session)
+            # rembg.remove() returns PIL Image when given PIL Image input
+            if isinstance(result, Image.Image):
+                return result
+            return Image.fromarray(result, "RGBA")
         except ImportError:
             logger.warning("rembg not installed, skipping background removal")
             return image
