@@ -205,6 +205,9 @@ def setup_logger(
         StructuredLogger instance
     """
     global _logger_instance
+    # Remove all existing loguru handlers so re-calling setup_logger()
+    # doesn't add a duplicate console handler and cause double-logging.
+    loguru_logger.remove()
     _logger_instance = StructuredLogger(
         log_dir=log_dir,
         level=level,

@@ -95,12 +95,18 @@ class TRELLIS2Engine(Engine):
 
         self._load_pipeline()
 
-        # Pass all images for multi-view reconstruction; single image falls back to one-view mode.
-        images = preprocessed_images if len(preprocessed_images) > 1 else preprocessed_images[0]
-        n = len(preprocessed_images)
-        first = preprocessed_images[0]
+        # pipeline.run() accepts a single PIL Image; pick the view with the most
+        # non-background content (largest subject area) — typically the frontal view.
+        import numpy as np
+        def _content_pixels(img: Image.Image) -> int:
+            arr = np.array(img.convert("RGB"))
+            return int(np.sum(np.any(arr < 240, axis=2)))
+
+        image = max(preprocessed_images, key=_content_pixels)
+        idx = preprocessed_images.index(image) + 1
         logger.info(
-            f"Running TRELLIS.2 inference on {n} image(s) at {first.size[0]}x{first.size[1]}..."
+            f"Selected image {idx}/{len(preprocessed_images)} as primary view "
+            f"({image.size[0]}x{image.size[1]}, highest content area)"
         )
         start = time.time()
         try:
@@ -109,7 +115,7 @@ class TRELLIS2Engine(Engine):
             logger.info("Starting pipeline.run()...")
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 result = self.pipeline.run(
-                    images,
+                    image,
                     preprocess_image=False,
                     pipeline_type="1024",
                 )
