@@ -83,7 +83,6 @@ class TRELLIS2Engine(Engine):
         images = []
         for path in validated:
             img = ImagePreprocessor.load_image(path)
-            img = ImagePreprocessor.remove_background(img)
             images.append(img)
         logger.info(f"Preprocessed {len(images)} image(s)")
         return images
@@ -110,24 +109,21 @@ class TRELLIS2Engine(Engine):
         )
         start = time.time()
         try:
-            # Mixed fp16/bf16 models require autocast so float32 tensors
-            # (e.g. DINOv3 output) are promoted to match each layer's dtype.
+            sm = torch.cuda.get_device_capability()
+            dtype = torch.bfloat16 if sm[0] >= 8 else torch.float16
+            logger.info(f"GPU sm_{sm[0]}{sm[1]}: using {dtype} autocast, preprocess_image=True")
             logger.info("Starting pipeline.run()...")
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
+            with torch.autocast(device_type="cuda", dtype=dtype):
                 result = self.pipeline.run(
                     image,
-                    preprocess_image=False,
+                    preprocess_image=True,
                     pipeline_type="1024",
                 )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
-            # attrs come out of autocast as fp16; grid_sample_3d inside simplify()
-            # creates a float32 buffer and index-puts into it → dtype mismatch.
             mesh.attrs = mesh.attrs.float()
-            logger.info("Starting mesh.simplify()...")
-            t_simplify = time.time()
-            mesh.simplify(16777216)
-            logger.info(f"mesh.simplify() done in {time.time() - t_simplify:.1f}s")
+            n_active = mesh.coords.shape[0] if hasattr(mesh, "coords") else "unknown"
+            logger.info(f"SLAT active voxels: {n_active}")
         except Exception as exc:
             torch.cuda.empty_cache()
             raise RuntimeError(f"TRELLIS.2 inference failed: {exc}")
