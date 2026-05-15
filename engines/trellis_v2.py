@@ -118,7 +118,7 @@ class TRELLIS2Engine(Engine):
             result = self.pipeline.run(
                 image,
                 preprocess_image=True,
-                pipeline_type="1024",
+                pipeline_type="1024_cascade",
             )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
@@ -157,7 +157,6 @@ class TRELLIS2Engine(Engine):
         output_file = output_dir / f"trellis_{timestamp}_raw.glb"
 
         # texture_size=1024 and remesh=False for fast export on T4.
-        # 4096 + remesh took >16 min (baking scales with texel count).
         logger.info(f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)...")
         t_glb = time.time()
         glb = o_voxel.postprocess.to_glb(
@@ -169,8 +168,8 @@ class TRELLIS2Engine(Engine):
             voxel_size=raw_mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=200000,
-            texture_size=2048,
-            remesh=False,
+            texture_size=4096,
+            remesh=True,
             verbose=True,
         )
         logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)")
