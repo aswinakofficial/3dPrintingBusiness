@@ -158,6 +158,9 @@ class TRELLIS2Engine(Engine):
             mesh.attrs = mesh.attrs.float()
             n_active = mesh.coords.shape[0] if hasattr(mesh, "coords") else "unknown"
             logger.info(f"SLAT active voxels: {n_active}")
+            logger.info(f"Mesh before simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces")
+            mesh.simplify(16777216)
+            logger.info(f"Mesh after simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces")
         except Exception as exc:
             torch.cuda.empty_cache()
             raise RuntimeError(f"TRELLIS.2 inference failed: {exc}")
@@ -192,6 +195,7 @@ class TRELLIS2Engine(Engine):
         # texture_size=1024 and remesh=False for fast export on T4.
         logger.info(f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)...")
         t_glb = time.time()
+        logger.info(f"Mesh for export: {raw_mesh.vertices.shape[0]} vertices, {raw_mesh.faces.shape[0]} faces")
         glb = o_voxel.postprocess.to_glb(
             vertices=raw_mesh.vertices,
             faces=raw_mesh.faces,
@@ -200,9 +204,11 @@ class TRELLIS2Engine(Engine):
             attr_layout=raw_mesh.layout,
             voxel_size=raw_mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-            decimation_target=200000,
+            decimation_target=1000000,
             texture_size=4096,
-            remesh=False,
+            remesh=True,
+            remesh_band=1,
+            remesh_project=0,
             verbose=True,
         )
         logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)")
