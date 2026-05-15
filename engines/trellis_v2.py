@@ -65,9 +65,13 @@ class TRELLIS2Engine(Engine):
         logger.info(f"Loading {self.MODEL_ID} from HuggingFace (multi-GB download)...")
         start = time.time()
         self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.MODEL_ID)
+        # HuggingFace loads TRELLIS.2 in fp16 by default. Cast to float32 so
+        # inputs (always float32) and weights match — avoids 'Input type (float)
+        # and bias type (c10::Half) should be the same' errors.
+        self.pipeline.float()
         self.pipeline.cuda()
         self.pipeline_loaded = True
-        logger.info(f"TRELLIS.2 pipeline ready in {time.time() - start:.1f}s")
+        logger.info(f"TRELLIS.2 pipeline ready in float32 in {time.time() - start:.1f}s")
 
     def preprocess(self, image_paths: Union[str, List[str]]) -> List[Image.Image]:
         if isinstance(image_paths, str):
