@@ -497,6 +497,14 @@ class JobsRunner:
                                 name="HF_TOKEN",
                                 value=os.getenv("HF_TOKEN", ""),
                             ),
+                            # Container Apps doesn't inherit Dockerfile ENV for
+                            # NVIDIA runtime vars — must be set explicitly so
+                            # the NVIDIA container hook exposes the GPU device.
+                            EnvironmentVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
+                            EnvironmentVar(
+                                name="NVIDIA_DRIVER_CAPABILITIES",
+                                value="compute,utility",
+                            ),
                         ],
                         # Override the Dockerfile's CMD so the entrypoint
                         # script runs main.py with our --directory and --output.
