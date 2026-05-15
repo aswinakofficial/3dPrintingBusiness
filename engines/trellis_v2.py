@@ -192,13 +192,29 @@ class TRELLIS2Engine(Engine):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = output_dir / f"trellis_{timestamp}_raw.glb"
 
-        # texture_size=1024 and remesh=False for fast export on T4.
+        # The raw TRELLIS.2 mesh has ~1 vertex per active SLAT voxel but far fewer
+        # faces — most vertices are isolated (no face references them).  Isolated
+        # vertices render as dots in every viewer and also crash o_voxel's remesh.
+        # Remove them and remap face indices before export.
+        unique_idx, inverse = torch.unique(raw_mesh.faces.reshape(-1), return_inverse=True)
+        n_isolated = raw_mesh.vertices.shape[0] - unique_idx.shape[0]
+        if n_isolated > 0:
+            logger.info(
+                f"Removing {n_isolated:,} isolated vertices "
+                f"({raw_mesh.vertices.shape[0]:,} → {unique_idx.shape[0]:,})"
+            )
+            vertices = raw_mesh.vertices[unique_idx]
+            faces = inverse.reshape(raw_mesh.faces.shape)
+        else:
+            vertices = raw_mesh.vertices
+            faces = raw_mesh.faces
+
         logger.info(f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)...")
         t_glb = time.time()
-        logger.info(f"Mesh for export: {raw_mesh.vertices.shape[0]} vertices, {raw_mesh.faces.shape[0]} faces")
+        logger.info(f"Mesh for export: {vertices.shape[0]:,} vertices, {faces.shape[0]:,} faces")
         glb = o_voxel.postprocess.to_glb(
-            vertices=raw_mesh.vertices,
-            faces=raw_mesh.faces,
+            vertices=vertices,
+            faces=faces,
             attr_volume=raw_mesh.attrs,
             coords=raw_mesh.coords,
             attr_layout=raw_mesh.layout,
