@@ -109,6 +109,11 @@ RUN sed -i \
 RUN sed -i \
   's|    model_name, trust_remote_code=True|    "ZhengPeng7/BiRefNet", trust_remote_code=True|' \
   /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py
+# BiRefNet returns a bfloat16 tensor under bfloat16 autocast but ToPILImage()
+# only accepts float32/uint8. Cast the prediction to float32 before conversion.
+RUN sed -i \
+  's|transforms.ToPILImage()(pred)|transforms.ToPILImage()(pred.float())|' \
+  /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py
 # spconv auto-tuner (ConvTunerSimple) fails on T4 (sm_75) — no pre-profiled kernels.
 # MaskImplicitGemm also triggers ConvTunerSimple; only Native (scatter/gather) avoids it.
 RUN sed -i "s/SPCONV_ALGO = 'auto'/SPCONV_ALGO = 'native'/" \
