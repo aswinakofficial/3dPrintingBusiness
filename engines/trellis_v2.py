@@ -65,13 +65,18 @@ class TRELLIS2Engine(Engine):
         logger.info(f"Loading {self.MODEL_ID} from HuggingFace (multi-GB download)...")
         start = time.time()
         self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.MODEL_ID)
-        # Trellis2ImageTo3DPipeline stores models in nested dicts/lists, not as
-        # direct attributes (vars() yields 0 nn.Modules). BFS-walk all reachable
-        # objects and cast every nn.Module to float32 to fix the mismatch:
-        # 'Input type (float) and bias type (c10::Half) should be the same'.
+        # torch.batch_norm requires float32 weight even under fp16/bfloat16 autocast.
+        # Cast ONLY BatchNorm layers to float32; everything else (linear, conv,
+        # sparse-conv) stays in its native fp16/bfloat16 so bfloat16 autocast works.
+        # BFS to reach nn.Modules stored in the pipeline's nested dicts/lists.
+        _bn_types = (
+            torch.nn.BatchNorm1d,
+            torch.nn.BatchNorm2d,
+            torch.nn.BatchNorm3d,
+        )
         seen: set = set()
         queue = [self.pipeline]
-        n_cast = 0
+        n_bn = 0
         while queue:
             obj = queue.pop()
             oid = id(obj)
@@ -79,16 +84,18 @@ class TRELLIS2Engine(Engine):
                 continue
             seen.add(oid)
             if isinstance(obj, torch.nn.Module):
-                obj.float()
-                n_cast += 1
-                continue  # .float() already recurses into all sub-modules
+                for m in obj.modules():
+                    if isinstance(m, _bn_types):
+                        m.float()
+                        n_bn += 1
+                continue  # .modules() already walked all sub-modules
             if isinstance(obj, dict):
                 queue.extend(obj.values())
             elif isinstance(obj, (list, tuple)):
                 queue.extend(obj)
             if hasattr(obj, "__dict__"):
                 queue.extend(vars(obj).values())
-        logger.info(f"Cast {n_cast} pipeline sub-module(s) to float32")
+        logger.info(f"Cast {n_bn} BatchNorm layer(s) to float32, rest stays in native dtype")
         self.pipeline.cuda()
         self.pipeline_loaded = True
         logger.info(f"TRELLIS.2 pipeline ready in {time.time() - start:.1f}s")
@@ -134,16 +141,18 @@ class TRELLIS2Engine(Engine):
         start = time.time()
         try:
             sm = torch.cuda.get_device_capability()
-            logger.info(f"GPU sm_{sm[0]}{sm[1]}: running pipeline.run() in float32 (preprocess_image=True)")
+            dtype = torch.bfloat16 if sm[0] >= 8 else torch.float16
+            logger.info(f"GPU sm_{sm[0]}{sm[1]}: using {dtype} autocast, preprocess_image=True")
             logger.info("Starting pipeline.run()...")
-            # No autocast: BiRefNet's BatchNorm requires float32 weights and
-            # fails under fp16/bfloat16 autocast ('got Half' dtype mismatch).
-            # A100 (40 GB) has enough VRAM to run the full pipeline in float32.
-            result = self.pipeline.run(
-                image,
-                preprocess_image=True,
-                pipeline_type="1024_cascade",
-            )
+            # bfloat16 autocast: lets the pipeline run in its native mixed-precision
+            # mode. BatchNorm layers were pre-cast to float32 (autocast keeps
+            # batch_norm in float32, and weight/input must match).
+            with torch.autocast(device_type="cuda", dtype=dtype):
+                result = self.pipeline.run(
+                    image,
+                    preprocess_image=True,
+                    pipeline_type="1024_cascade",
+                )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
             mesh.attrs = mesh.attrs.float()
