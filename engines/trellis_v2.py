@@ -202,7 +202,7 @@ class TRELLIS2Engine(Engine):
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=200000,
             texture_size=4096,
-            remesh=True,
+            remesh=False,
             verbose=True,
         )
         logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)")
