@@ -65,14 +65,29 @@ class TRELLIS2Engine(Engine):
         logger.info(f"Loading {self.MODEL_ID} from HuggingFace (multi-GB download)...")
         start = time.time()
         self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.MODEL_ID)
-        # Trellis2ImageTo3DPipeline is a custom class (not nn.Module), so
-        # .float() doesn't exist. Cast each sub-module individually to float32
-        # to avoid 'Input type (float) and bias type (c10::Half)' mismatches.
+        # Trellis2ImageTo3DPipeline stores models in nested dicts/lists, not as
+        # direct attributes (vars() yields 0 nn.Modules). BFS-walk all reachable
+        # objects and cast every nn.Module to float32 to fix the mismatch:
+        # 'Input type (float) and bias type (c10::Half) should be the same'.
+        seen: set = set()
+        queue = [self.pipeline]
         n_cast = 0
-        for attr_val in vars(self.pipeline).values():
-            if isinstance(attr_val, torch.nn.Module):
-                attr_val.float()
+        while queue:
+            obj = queue.pop()
+            oid = id(obj)
+            if oid in seen:
+                continue
+            seen.add(oid)
+            if isinstance(obj, torch.nn.Module):
+                obj.float()
                 n_cast += 1
+                continue  # .float() already recurses into all sub-modules
+            if isinstance(obj, dict):
+                queue.extend(obj.values())
+            elif isinstance(obj, (list, tuple)):
+                queue.extend(obj)
+            if hasattr(obj, "__dict__"):
+                queue.extend(vars(obj).values())
         logger.info(f"Cast {n_cast} pipeline sub-module(s) to float32")
         self.pipeline.cuda()
         self.pipeline_loaded = True
