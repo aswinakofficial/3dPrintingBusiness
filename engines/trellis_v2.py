@@ -110,15 +110,16 @@ class TRELLIS2Engine(Engine):
         start = time.time()
         try:
             sm = torch.cuda.get_device_capability()
-            dtype = torch.bfloat16 if sm[0] >= 8 else torch.float16
-            logger.info(f"GPU sm_{sm[0]}{sm[1]}: using {dtype} autocast, preprocess_image=True")
+            logger.info(f"GPU sm_{sm[0]}{sm[1]}: running pipeline.run() in float32 (preprocess_image=True)")
             logger.info("Starting pipeline.run()...")
-            with torch.autocast(device_type="cuda", dtype=dtype):
-                result = self.pipeline.run(
-                    image,
-                    preprocess_image=True,
-                    pipeline_type="1024",
-                )
+            # No autocast: BiRefNet's BatchNorm requires float32 weights and
+            # fails under fp16/bfloat16 autocast ('got Half' dtype mismatch).
+            # A100 (40 GB) has enough VRAM to run the full pipeline in float32.
+            result = self.pipeline.run(
+                image,
+                preprocess_image=True,
+                pipeline_type="1024",
+            )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
             mesh = result[0]
             mesh.attrs = mesh.attrs.float()
