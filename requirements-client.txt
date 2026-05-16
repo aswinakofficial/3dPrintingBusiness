@@ -11,7 +11,9 @@
 # Azure SDKs
 azure-identity~=1.15
 azure-mgmt-containerinstance~=10.1
+azure-mgmt-appcontainers~=3.1
 azure-storage-blob~=12.19
+azure-storage-file-share~=12.16
 
 # Logging (matches utils/logger.py). Loose lower bounds -- the API surface
 # we use is stable, and tight pins clash with newer venvs that may have

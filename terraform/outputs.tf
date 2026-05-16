@@ -105,16 +105,16 @@ output "application_insights_app_id" {
 output "deployment_summary" {
   description = "Summary of deployed resources for Container Apps batch processing"
   value = {
-    resource_group      = azurerm_resource_group.main.name
-    location            = azurerm_resource_group.main.location
-    environment         = var.environment
-    storage_account     = azurerm_storage_account.main.name
-    file_storage        = azurerm_storage_account.files.name
-    file_share          = azurerm_storage_share.job_data.name
-    container_registry  = azurerm_container_registry.main.name
-    acr_login_server    = azurerm_container_registry.main.login_server
-    container_apps_env  = azurerm_container_app_environment.main.name
-    key_vault_name      = azurerm_key_vault.main.name
-    log_analytics_name  = azurerm_log_analytics_workspace.main.name
+    resource_group     = azurerm_resource_group.main.name
+    location           = azurerm_resource_group.main.location
+    environment        = var.environment
+    storage_account    = azurerm_storage_account.main.name
+    file_storage       = azurerm_storage_account.files.name
+    file_share         = azurerm_storage_share.job_data.name
+    container_registry = azurerm_container_registry.main.name
+    acr_login_server   = azurerm_container_registry.main.login_server
+    container_apps_env = azurerm_container_app_environment.main.name
+    key_vault_name     = azurerm_key_vault.main.name
+    log_analytics_name = azurerm_log_analytics_workspace.main.name
   }
 }

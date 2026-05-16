@@ -121,8 +121,17 @@ resource "azurerm_log_analytics_workspace" "main" {
   tags = var.tags
 }
 
-# Azure Container Apps environment for on-demand GPU jobs
-# workload_profile block enables "Workload Profile" mode required for GPU dedicated compute
+# Azure Container Apps environment for on-demand GPU jobs.
+# We use this instead of ACI because ACI's GpuSku enum (V100/P100/K80) has
+# zero quota on free trial subscriptions, while Container Apps' T4 / A100
+# workload profiles are available on the same subscriptions.
+#
+# NOTE: the Consumption-GPU-NC8as-T4 workload profile is added imperatively
+# (`az containerapp env workload-profile add ... --workload-profile-type
+# Consumption-GPU-NC8as-T4`) because azurerm ~> 3.0 doesn't yet validate the
+# GPU profile types. Upgrade to azurerm v4 to bring it back into IaC. The
+# `lifecycle.ignore_changes` block below preserves the imperatively-added
+# profile across `terraform apply` runs.
 resource "azurerm_container_app_environment" "main" {
   name                       = "cae-${var.project_name}-${var.environment}"
   location                   = azurerm_resource_group.main.location
@@ -136,7 +145,23 @@ resource "azurerm_container_app_environment" "main" {
     maximum_count         = 0
   }
 
+  lifecycle {
+    ignore_changes = [workload_profile]
+  }
+
   tags = var.tags
+}
+
+# Register the existing Azure Files share with the Container Apps env so
+# Jobs can mount /workspace at runtime. Trigger script writes inputs to
+# this share before starting a job and reads outputs from it after.
+resource "azurerm_container_app_environment_storage" "jobdata" {
+  name                         = "jobdata"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  account_name                 = azurerm_storage_account.files.name
+  share_name                   = azurerm_storage_share.job_data.name
+  access_key                   = azurerm_storage_account.files.primary_access_key
+  access_mode                  = "ReadWrite"
 }
 
 # Application Insights
