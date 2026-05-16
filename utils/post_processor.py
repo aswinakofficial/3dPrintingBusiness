@@ -10,7 +10,6 @@ import logging
 
 from utils.logger import get_logger
 
-
 logger = get_logger()
 
 
@@ -107,8 +106,10 @@ class MeshRepair:
                     logger.info(f"Filled {holes_filled} holes")
 
             # Final validation
-            if not getattr(mesh, 'is_valid', True):
-                logger.warning("Mesh still has validity issues after repair, attempting additional fixes")
+            if not getattr(mesh, "is_valid", True):
+                logger.warning(
+                    "Mesh still has validity issues after repair, attempting additional fixes"
+                )
                 mesh.remove_unreferenced_vertices()
                 logger.debug("Removed unreferenced vertices")
 
@@ -148,7 +149,7 @@ class MeshRepair:
                         logger.debug(f"Identified hole with volume {hole_volume}mm³")
 
             # Attempt fill using trimesh
-            if hasattr(mesh, 'fill_holes'):
+            if hasattr(mesh, "fill_holes"):
                 mesh.fill_holes()
                 logger.debug("Filled holes using trimesh fill_holes()")
 
@@ -199,7 +200,9 @@ class MeshHollowing:
         try:
             # Validate mesh is suitable for hollowing
             if not mesh.is_watertight:
-                logger.warning("Mesh is not watertight, attempting repair before hollowing")
+                logger.warning(
+                    "Mesh is not watertight, attempting repair before hollowing"
+                )
                 mesh = self._make_watertight(mesh)
 
             # Create voxel-based offset
@@ -243,7 +246,7 @@ class MeshHollowing:
 
         try:
             # Use convex hull as fallback (conservative)
-            if hasattr(mesh, 'convex_hull'):
+            if hasattr(mesh, "convex_hull"):
                 hull = mesh.convex_hull
                 logger.debug(f"Using convex hull: {len(hull.vertices)} vertices")
                 return hull
@@ -296,7 +299,9 @@ class MeshHollowing:
             voxels.matrix[:] = shell_voxels
             hollow = voxels.marching_cubes
 
-            logger.debug(f"Voxel-based hollowing produced {len(hollow.vertices)} vertices")
+            logger.debug(
+                f"Voxel-based hollowing produced {len(hollow.vertices)} vertices"
+            )
 
             return hollow
 
@@ -326,7 +331,7 @@ class MeshHollowing:
             inset_factor = -wall_thickness / 100  # Convert mm to normalized units
 
             # Try trimesh offset (may not be available)
-            if hasattr(mesh, 'apply_scale'):
+            if hasattr(mesh, "apply_scale"):
                 # Create inner cavity by scaling inward
                 inner_mesh = mesh.copy()
                 scale_factor = 1 - (wall_thickness / max(mesh.extents))
@@ -334,7 +339,9 @@ class MeshHollowing:
 
                 # Combine outer and inner as two-sided surface
                 combined = trimesh.util.concatenate([mesh, inner_mesh])
-                logger.debug(f"Created hollow with combined offset: {len(combined.vertices)} vertices")
+                logger.debug(
+                    f"Created hollow with combined offset: {len(combined.vertices)} vertices"
+                )
                 return combined
 
             logger.warning("Offset method unavailable, returning original mesh")
@@ -344,7 +351,9 @@ class MeshHollowing:
             logger.warning(f"Offset-based hollowing failed: {e}")
             return mesh
 
-    def _add_drainage_holes(self, mesh: trimesh.Trimesh, hole_diameter: float = 3.0) -> trimesh.Trimesh:
+    def _add_drainage_holes(
+        self, mesh: trimesh.Trimesh, hole_diameter: float = 3.0
+    ) -> trimesh.Trimesh:
         """
         Add drainage holes for interior cavities (post-processing).
 
@@ -461,7 +470,9 @@ class SupportGenerator:
             threshold_angle = self.config.support_angle_threshold
             overhangs = np.where(angles_deg > threshold_angle)[0]
 
-            logger.debug(f"Identified {len(overhangs)} overhang faces at {threshold_angle}° threshold")
+            logger.debug(
+                f"Identified {len(overhangs)} overhang faces at {threshold_angle}° threshold"
+            )
 
             return overhangs
 
@@ -469,7 +480,9 @@ class SupportGenerator:
             logger.warning(f"Overhang detection failed: {e}")
             return np.array([])
 
-    def _group_supports(self, mesh: trimesh.Trimesh, overhang_indices: np.ndarray) -> list:
+    def _group_supports(
+        self, mesh: trimesh.Trimesh, overhang_indices: np.ndarray
+    ) -> list:
         """
         Group overhanging faces into connected regions.
 
@@ -489,18 +502,22 @@ class SupportGenerator:
                     continue
 
                 # Find connected component
-                region = self._find_connected_region(mesh, face_idx, overhang_indices, processed)
+                region = self._find_connected_region(
+                    mesh, face_idx, overhang_indices, processed
+                )
                 if len(region) > 0:
                     # Calculate region centroid for support placement
                     region_faces = mesh.faces[list(region)]
                     region_verts = mesh.vertices[region_faces.flatten()]
                     centroid = region_verts.mean(axis=0)
 
-                    regions.append({
-                        "faces": region,
-                        "centroid": centroid,
-                        "size": len(region),
-                    })
+                    regions.append(
+                        {
+                            "faces": region,
+                            "centroid": centroid,
+                            "size": len(region),
+                        }
+                    )
                     processed.update(region)
 
             logger.debug(f"Grouped overhangs into {len(regions)} regions")
@@ -511,7 +528,11 @@ class SupportGenerator:
             return []
 
     def _find_connected_region(
-        self, mesh: trimesh.Trimesh, start_face: int, overhang_set: np.ndarray, processed: set
+        self,
+        mesh: trimesh.Trimesh,
+        start_face: int,
+        overhang_set: np.ndarray,
+        processed: set,
     ) -> set:
         """
         Find connected component of overhanging faces using BFS.
@@ -544,7 +565,9 @@ class SupportGenerator:
 
         return region
 
-    def _create_support_columns(self, mesh: trimesh.Trimesh, support_regions: list) -> trimesh.Trimesh:
+    def _create_support_columns(
+        self, mesh: trimesh.Trimesh, support_regions: list
+    ) -> trimesh.Trimesh:
         """
         Create minimal support columns from centroids to build platform.
 
@@ -573,7 +596,9 @@ class SupportGenerator:
                     height=top[2] - bottom[2],
                 )
                 # Position column
-                column.apply_translation(bottom + np.array([0, 0, column.extents[2] / 2]))
+                column.apply_translation(
+                    bottom + np.array([0, 0, column.extents[2] / 2])
+                )
 
                 support_meshes.append(column)
 
@@ -588,7 +613,9 @@ class SupportGenerator:
             logger.warning(f"Support column creation failed: {e}")
             return None
 
-    def _add_raft(self, mesh: trimesh.Trimesh, support_mesh: Optional[trimesh.Trimesh]) -> trimesh.Trimesh:
+    def _add_raft(
+        self, mesh: trimesh.Trimesh, support_mesh: Optional[trimesh.Trimesh]
+    ) -> trimesh.Trimesh:
         """
         Add rectangular raft base for improved bed adhesion.
 
@@ -606,17 +633,17 @@ class SupportGenerator:
             raft_y = bounds[1][1] - bounds[0][1] + 10
             raft_height = self.config.base_thickness
 
-            raft = trimesh.creation.box(
-                extents=[raft_x, raft_y, raft_height]
-            )
+            raft = trimesh.creation.box(extents=[raft_x, raft_y, raft_height])
 
             # Position raft at mesh bottom
             z_min = bounds[0][2]
-            raft.apply_translation([
-                bounds[0][0] + raft_x / 2,
-                bounds[0][1] + raft_y / 2,
-                z_min - raft_height / 2,
-            ])
+            raft.apply_translation(
+                [
+                    bounds[0][0] + raft_x / 2,
+                    bounds[0][1] + raft_y / 2,
+                    z_min - raft_height / 2,
+                ]
+            )
 
             if support_mesh is not None:
                 combined = trimesh.util.concatenate([support_mesh, raft])
@@ -672,7 +699,9 @@ class PostProcessingPipeline:
             mesh = trimesh.load(mesh_path)
             if isinstance(mesh, trimesh.Scene):
                 mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
-            logger.info(f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+            logger.info(
+                f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+            )
 
             # Stage 1: Repair
             mesh = self.repair.repair_mesh(mesh)
@@ -691,6 +720,7 @@ class PostProcessingPipeline:
             # Generate output path
             if output_path is None:
                 from datetime import datetime
+
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"output/postprocessed/{timestamp}_processed.{self.config.output_format}"
 
@@ -713,8 +743,14 @@ class PostProcessingPipeline:
                 "support_path": str(support_path) if support_path else None,
                 "vertices": len(mesh.vertices),
                 "faces": len(mesh.faces),
-                "has_supports": support_result.get("has_supports", False) if support_result else False,
-                "overhang_faces": support_result.get("overhang_faces", 0) if support_result else 0,
+                "has_supports": (
+                    support_result.get("has_supports", False)
+                    if support_result
+                    else False
+                ),
+                "overhang_faces": (
+                    support_result.get("overhang_faces", 0) if support_result else 0
+                ),
             }
 
         except Exception as e:

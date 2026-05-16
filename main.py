@@ -125,7 +125,9 @@ class Pipeline:
             max_hole_size=cfg.get("post_processing.mesh_repair.max_hole_size", 30),
             hollow_enabled=cfg.get("post_processing.hollowing.enabled", False),
             wall_thickness=cfg.get("post_processing.hollowing.wall_thickness_mm", 2.0),
-            voxel_resolution=cfg.get("post_processing.hollowing.voxel_resolution_mm", 1.0),
+            voxel_resolution=cfg.get(
+                "post_processing.hollowing.voxel_resolution_mm", 1.0
+            ),
             generate_supports=cfg.get("post_processing.supports.enabled", False),
             support_angle_threshold=cfg.get(
                 "post_processing.supports.angle_threshold_degrees", 45
@@ -313,7 +315,9 @@ class Pipeline:
 
         for idx, image_path in enumerate(image_paths, 1):
             try:
-                logger.info(f"Processing image {idx}/{len(image_paths)}: {Path(image_path).name}")
+                logger.info(
+                    f"Processing image {idx}/{len(image_paths)}: {Path(image_path).name}"
+                )
 
                 image = preprocessor.load_image(image_path)
                 logger.info(f"  ✓ Loaded: {image.size}")
@@ -484,7 +488,9 @@ class Pipeline:
             f"{metadata['mesh_stats']['faces']:,} faces"
         )
         if metadata["post_processing"]["has_supports"]:
-            print(f"Supports: Yes ({metadata['post_processing']['overhang_faces']} faces)")
+            print(
+                f"Supports: Yes ({metadata['post_processing']['overhang_faces']} faces)"
+            )
         print(f"Session: {self.session_dir}")
         print("=" * 60 + "\n")
 
@@ -665,7 +671,13 @@ Examples:
         output_dir = Path(args.output) if args.output else None
 
         # Run pipeline
-        pipeline = Pipeline(args.engine, config, output_dir, pp_config, generate_views=args.generate_views)
+        pipeline = Pipeline(
+            args.engine,
+            config,
+            output_dir,
+            pp_config,
+            generate_views=args.generate_views,
+        )
         results = pipeline.run(image_paths)
 
         logger.info(f"✓ Pipeline completed successfully")

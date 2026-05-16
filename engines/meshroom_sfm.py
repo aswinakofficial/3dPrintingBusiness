@@ -15,7 +15,6 @@ from engines.base_engine import Engine, EngineConfig
 from utils.logger import get_logger
 from utils.pre_processor import ImageValidator, ImagePreprocessor
 
-
 logger = get_logger()
 
 
@@ -150,12 +149,16 @@ class MeshroomEngine(Engine):
 
         num_images = len(validated_paths)
         if num_images < self.MESHROOM_MIN_IMAGES:
-            error_msg = f"Need at least {self.MESHROOM_MIN_IMAGES} images, got {num_images}"
+            error_msg = (
+                f"Need at least {self.MESHROOM_MIN_IMAGES} images, got {num_images}"
+            )
             logger.error(error_msg)
             raise ValueError(error_msg)
 
         if num_images > self.MESHROOM_MAX_IMAGES:
-            warning_msg = f"Limiting to {self.MESHROOM_MAX_IMAGES} images from {num_images}"
+            warning_msg = (
+                f"Limiting to {self.MESHROOM_MAX_IMAGES} images from {num_images}"
+            )
             logger.warning(warning_msg)
             validated_paths = validated_paths[: self.MESHROOM_MAX_IMAGES]
 
@@ -181,9 +184,7 @@ class MeshroomEngine(Engine):
                 logger.error(f"Failed to load image {path}: {e}")
                 raise ValueError(f"Failed to load image {path}: {e}")
 
-        logger.info(
-            f"Preprocessed {len(preprocessed_images)} images for Meshroom"
-        )
+        logger.info(f"Preprocessed {len(preprocessed_images)} images for Meshroom")
 
         return preprocessed_images
 

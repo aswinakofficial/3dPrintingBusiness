@@ -20,8 +20,7 @@ class TestConfig:
     def test_config_initialization_valid(self, tmp_path):
         """Test config loads successfully from valid YAML."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(
-            """
+        config_file.write_text("""
 paths:
   input: ./input
   output: ./output
@@ -29,8 +28,7 @@ paths:
 runtime:
   local_gpu: false
   cloud_provider: azure
-"""
-        )
+""")
 
         config = Config(str(config_file))
         assert config.data is not None
@@ -53,15 +51,13 @@ runtime:
     def test_config_get_dot_notation(self, tmp_path):
         """Test config.get() with dot notation."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(
-            """
+        config_file.write_text("""
 paths:
   input: ./input
   output: ./output
 runtime:
   local_gpu: false
-"""
-        )
+""")
 
         config = Config(str(config_file))
         assert config.get("paths.input") == "./input"
@@ -79,7 +75,9 @@ runtime:
     def test_config_get_output_dir_creates(self, tmp_path):
         """Test config creates output directory."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(f"paths:\n  output: {tmp_path / 'out'}\nruntime:\n  local_gpu: false")
+        config_file.write_text(
+            f"paths:\n  output: {tmp_path / 'out'}\nruntime:\n  local_gpu: false"
+        )
 
         config = Config(str(config_file))
         output_dir = config.get_output_dir()
@@ -88,7 +86,9 @@ runtime:
     def test_config_get_logs_dir_creates(self, tmp_path):
         """Test config creates logs directory."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(f"paths:\n  logs: {tmp_path / 'logs'}\nruntime:\n  local_gpu: false")
+        config_file.write_text(
+            f"paths:\n  logs: {tmp_path / 'logs'}\nruntime:\n  local_gpu: false"
+        )
 
         config = Config(str(config_file))
         logs_dir = config.get_logs_dir()
@@ -102,8 +102,7 @@ class TestPipeline:
     def config_and_temp_dir(self, tmp_path):
         """Create config and temporary directory."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(
-            f"""
+        config_file.write_text(f"""
 paths:
   input: {tmp_path / 'input'}
   output: {tmp_path / 'output'}
@@ -119,8 +118,7 @@ post_processing:
     wall_thickness_mm: 2.0
   supports:
     enabled: false
-"""
-        )
+""")
         config = Config(str(config_file))
         return config, tmp_path
 
@@ -175,7 +173,9 @@ post_processing:
         with pytest.raises(FileNotFoundError):
             pipeline._validate_inputs(["/nonexistent/image.jpg"])
 
-    def test_pipeline_validate_inputs_trellis_max_images(self, config_and_temp_dir, tmp_path):
+    def test_pipeline_validate_inputs_trellis_max_images(
+        self, config_and_temp_dir, tmp_path
+    ):
         """Test TRELLIS.2 rejects more than 4 images."""
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("trellis", config)
@@ -193,7 +193,9 @@ post_processing:
         with pytest.raises(ValueError, match="supports max 4 images"):
             pipeline._validate_inputs(images)
 
-    def test_pipeline_validate_inputs_meshroom_min_images(self, config_and_temp_dir, tmp_path):
+    def test_pipeline_validate_inputs_meshroom_min_images(
+        self, config_and_temp_dir, tmp_path
+    ):
         """Test Meshroom requires at least 10 images."""
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("meshroom", config)
@@ -211,7 +213,9 @@ post_processing:
         with pytest.raises(ValueError, match="requires min 10 images"):
             pipeline._validate_inputs(images)
 
-    def test_pipeline_validate_inputs_meshroom_max_images(self, config_and_temp_dir, tmp_path):
+    def test_pipeline_validate_inputs_meshroom_max_images(
+        self, config_and_temp_dir, tmp_path
+    ):
         """Test Meshroom rejects more than 50 images."""
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("meshroom", config)
@@ -246,26 +250,33 @@ post_processing:
         mock_engine.validate_prerequisites.assert_called_once()
 
     @patch("main.load_engine")
-    def test_pipeline_load_engine_fails_prerequisites(self, mock_load, config_and_temp_dir):
+    def test_pipeline_load_engine_fails_prerequisites(
+        self, mock_load, config_and_temp_dir
+    ):
         """Test engine fails on prerequisite check."""
         config, tmp_path = config_and_temp_dir
         pipeline = Pipeline("trellis", config)
 
         mock_engine = MagicMock()
-        mock_engine.validate_prerequisites.side_effect = RuntimeError("CUDA not available")
+        mock_engine.validate_prerequisites.side_effect = RuntimeError(
+            "CUDA not available"
+        )
         mock_load.return_value = mock_engine
 
         with pytest.raises(RuntimeError):
             pipeline._load_engine()
 
     @patch("main.ImagePreprocessor")
-    def test_pipeline_preprocess_images_single(self, mock_preprocessor_class, config_and_temp_dir, tmp_path):
+    def test_pipeline_preprocess_images_single(
+        self, mock_preprocessor_class, config_and_temp_dir, tmp_path
+    ):
         """Test preprocessing a single image."""
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("trellis", config)
 
         # Create fake image
         from PIL import Image
+
         img = Image.new("RGB", (512, 512))
         img_path = tmp_path / "test.jpg"
         img.save(img_path)
@@ -283,13 +294,16 @@ post_processing:
         assert Path(preprocessed[0]).exists()
 
     @patch("main.ImagePreprocessor")
-    def test_pipeline_preprocess_images_multiple(self, mock_preprocessor_class, config_and_temp_dir, tmp_path):
+    def test_pipeline_preprocess_images_multiple(
+        self, mock_preprocessor_class, config_and_temp_dir, tmp_path
+    ):
         """Test preprocessing multiple images."""
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("trellis", config)
 
         # Create fake images
         from PIL import Image
+
         images = []
         for i in range(3):
             img = Image.new("RGB", (512, 512))
@@ -309,7 +323,9 @@ post_processing:
         assert len(preprocessed) == 3
 
     @patch("main.PostProcessingPipeline")
-    def test_pipeline_post_process_mesh_success(self, mock_pp_class, config_and_temp_dir, tmp_path):
+    def test_pipeline_post_process_mesh_success(
+        self, mock_pp_class, config_and_temp_dir, tmp_path
+    ):
         """Test mesh post-processing."""
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("trellis", config)
@@ -366,8 +382,7 @@ class TestPipelineIntegration:
         """Setup for full pipeline tests."""
         # Create config
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(
-            f"""
+        config_file.write_text(f"""
 paths:
   input: {tmp_path / 'input'}
   output: {tmp_path / 'output'}
@@ -378,11 +393,11 @@ post_processing:
   auto_repair: true
   hollowing:
     enabled: false
-"""
-        )
+""")
 
         # Create test image
         from PIL import Image
+
         img = Image.new("RGB", (512, 512), color="white")
         img_path = tmp_path / "test.jpg"
         img.save(img_path)
@@ -392,7 +407,9 @@ post_processing:
 
     @patch("main.PostProcessingPipeline")
     @patch("main.load_engine")
-    def test_pipeline_run_complete(self, mock_load_engine, mock_pp_class, full_test_setup):
+    def test_pipeline_run_complete(
+        self, mock_load_engine, mock_pp_class, full_test_setup
+    ):
         """Test complete pipeline execution."""
         config, tmp_path, img_path = full_test_setup
 

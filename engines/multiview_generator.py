@@ -49,7 +49,9 @@ class MultiViewGenerator:
     def generate_views(self, image: Image.Image) -> list[Image.Image]:
         """Return 6 novel views from a single background-removed image."""
         self._load_pipeline()
-        result = self._pipe(image, num_inference_steps=self.num_inference_steps).images[0]
+        result = self._pipe(image, num_inference_steps=self.num_inference_steps).images[
+            0
+        ]
         return self._split_grid(result)
 
     def _split_grid(self, grid: Image.Image) -> list[Image.Image]:
@@ -60,7 +62,12 @@ class MultiViewGenerator:
         views = []
         for row in range(self._GRID_ROWS):
             for col in range(self._GRID_COLS):
-                box = (col * cell_w, row * cell_h, (col + 1) * cell_w, (row + 1) * cell_h)
+                box = (
+                    col * cell_w,
+                    row * cell_h,
+                    (col + 1) * cell_w,
+                    (row + 1) * cell_h,
+                )
                 views.append(grid.crop(box))
         return views
 

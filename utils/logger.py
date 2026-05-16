@@ -54,7 +54,9 @@ class StructuredLogger:
         )
 
         # File handler (JSON lines format)
-        log_file = self.log_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_file = (
+            self.log_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        )
         loguru_logger.add(
             str(log_file),
             level=level,
@@ -95,7 +97,9 @@ class StructuredLogger:
 
     def warning(self, message: str, **context):
         """Log warning with context."""
-        self.logger.warning(f"{message} | {json.dumps(context)}" if context else message)
+        self.logger.warning(
+            f"{message} | {json.dumps(context)}" if context else message
+        )
 
     def error(self, message: str, **context):
         """Log error with context."""
@@ -103,7 +107,9 @@ class StructuredLogger:
 
     def critical(self, message: str, **context):
         """Log critical error with context."""
-        self.logger.critical(f"{message} | {json.dumps(context)}" if context else message)
+        self.logger.critical(
+            f"{message} | {json.dumps(context)}" if context else message
+        )
 
     def log_step(
         self,

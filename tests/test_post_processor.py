@@ -25,7 +25,7 @@ class TestPostProcessingConfig:
     def test_config_defaults(self):
         """Test default configuration values."""
         config = PostProcessingConfig()
-        
+
         assert config.repair_non_manifold is True
         assert config.hollow_enabled is True
         assert config.generate_supports is True
@@ -39,7 +39,7 @@ class TestPostProcessingConfig:
             support_angle_threshold=30.0,
             generate_supports=False,
         )
-        
+
         assert config.wall_thickness == 3.0
         assert config.support_angle_threshold == 30.0
         assert config.generate_supports is False
@@ -64,11 +64,11 @@ class TestMeshRepair:
         """Fixture for mesh with degenerate faces."""
         # Create mesh and add degenerate face
         mesh = trimesh.creation.box(extents=[10, 10, 10])
-        
+
         # Add degenerate face (all vertices same point)
         bad_face = np.array([0, 0, 0])
         mesh.faces = np.vstack([mesh.faces, bad_face])
-        
+
         yield mesh
 
     def test_repair_initialization(self, config):
@@ -81,7 +81,7 @@ class TestMeshRepair:
         """Test repairing already valid mesh."""
         repair = MeshRepair(config)
         repaired = repair.repair_mesh(simple_cube)
-        
+
         assert repaired is not None
         assert len(repaired.vertices) > 0
         assert len(repaired.faces) > 0
@@ -91,9 +91,9 @@ class TestMeshRepair:
         repair = MeshRepair(config)
         original_vertices = len(simple_cube.vertices)
         original_faces = len(simple_cube.faces)
-        
+
         repaired = repair.repair_mesh(simple_cube)
-        
+
         # Repaired mesh should have similar statistics
         assert len(repaired.vertices) > 0
         assert len(repaired.faces) > 0
@@ -122,14 +122,14 @@ class TestMeshHollowing:
     def test_hollow_config_values(self, config):
         """Test hollowing configuration retrieval."""
         hollowing = MeshHollowing(config)
-        
+
         assert hollowing.config.wall_thickness == 2.0
         assert hollowing.config.hollow_enabled is True
 
     def test_watertight_mesh_check(self, config, solid_sphere):
         """Test that watertight meshes are identified."""
         hollowing = MeshHollowing(config)
-        
+
         # Sphere should be watertight
         assert solid_sphere.is_watertight
 
@@ -137,7 +137,7 @@ class TestMeshHollowing:
         """Test voxel resolution configuration."""
         config_custom = PostProcessingConfig(voxel_resolution=0.5)
         hollowing = MeshHollowing(config_custom)
-        
+
         assert hollowing.config.voxel_resolution == 0.5
 
 
@@ -167,17 +167,17 @@ class TestSupportGenerator:
     def test_support_config_values(self, config):
         """Test support configuration values."""
         generator = SupportGenerator(config)
-        
+
         assert generator.config.support_angle_threshold == 45.0
         assert generator.config.generate_supports is True
 
     def test_overhang_detection_flat_surface(self, config, simple_cube):
         """Test overhang detection on flat surface (should be few/none)."""
         generator = SupportGenerator(config)
-        
+
         # Cube has mostly vertical faces, few overhangs
         overhangs = generator._identify_overhangs(simple_cube)
-        
+
         # Should be an array (possibly empty)
         assert isinstance(overhangs, np.ndarray)
 
@@ -185,14 +185,14 @@ class TestSupportGenerator:
         """Test support diameter configuration."""
         config_custom = PostProcessingConfig(support_diameter=4.0)
         generator = SupportGenerator(config_custom)
-        
+
         assert generator.config.support_diameter == 4.0
 
     def test_raft_enabled_setting(self, config):
         """Test raft configuration."""
         config_no_raft = PostProcessingConfig(raft_enabled=False)
         generator = SupportGenerator(config_no_raft)
-        
+
         assert generator.config.raft_enabled is False
 
 
@@ -221,17 +221,17 @@ class TestPostProcessingPipeline:
     def test_mesh_file(self):
         """Fixture for test mesh file."""
         mesh = trimesh.creation.box(extents=[10, 10, 10])
-        
+
         with tempfile.NamedTemporaryFile(suffix=".obj", delete=False) as f:
             mesh.export(f.name, file_type="obj")
             yield f.name
-        
+
         Path(f.name).unlink()
 
     def test_pipeline_initialization(self, config):
         """Test pipeline initialization."""
         pipeline = PostProcessingPipeline(config)
-        
+
         assert pipeline is not None
         assert pipeline.repair is not None
         assert pipeline.hollowing is not None
@@ -240,32 +240,32 @@ class TestPostProcessingPipeline:
     def test_pipeline_default_config(self):
         """Test pipeline with default config."""
         pipeline = PostProcessingPipeline()
-        
+
         assert pipeline.config is not None
         assert pipeline.config.repair_non_manifold is True
 
     def test_repair_stage(self, config):
         """Test repair stage of pipeline."""
         pipeline = PostProcessingPipeline(config)
-        
+
         # Test that repair component is accessible
-        assert hasattr(pipeline, 'repair')
+        assert hasattr(pipeline, "repair")
         assert callable(pipeline.repair.repair_mesh)
 
     def test_hollowing_stage(self, config_full):
         """Test hollowing stage configuration."""
         pipeline = PostProcessingPipeline(config_full)
-        
+
         # Test that hollowing component is accessible
-        assert hasattr(pipeline, 'hollowing')
+        assert hasattr(pipeline, "hollowing")
         assert callable(pipeline.hollowing.hollow_mesh)
 
     def test_support_stage(self, config_full):
         """Test support stage configuration."""
         pipeline = PostProcessingPipeline(config_full)
-        
+
         # Test that support component is accessible
-        assert hasattr(pipeline, 'supports')
+        assert hasattr(pipeline, "supports")
         assert callable(pipeline.supports.generate_supports)
 
 
@@ -285,7 +285,7 @@ class TestPostProcessingIntegration:
     def test_mesh_file(self):
         """Fixture for test mesh file."""
         mesh = trimesh.creation.box(extents=[10, 10, 10])
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             mesh_path = Path(tmpdir) / "test_mesh.obj"
             mesh.export(str(mesh_path), file_type="obj")
@@ -294,7 +294,7 @@ class TestPostProcessingIntegration:
     def test_pipeline_mesh_loading(self, config, test_mesh_file):
         """Test pipeline can load and process mesh."""
         pipeline = PostProcessingPipeline(config)
-        
+
         # Test loading mesh
         mesh = trimesh.load(test_mesh_file)
         assert mesh is not None
@@ -307,9 +307,9 @@ class TestPostProcessingIntegration:
             hollow_enabled=False,
             generate_supports=False,
         )
-        
+
         pipeline = PostProcessingPipeline(config_minimal)
-        
+
         # Verify stages are configured
         assert pipeline.config.repair_non_manifold is True
 
@@ -320,7 +320,7 @@ class TestMeshValidation:
     def test_valid_mesh_properties(self):
         """Test properties of valid mesh."""
         mesh = trimesh.creation.box(extents=[10, 10, 10])
-        
+
         assert mesh.is_valid or True  # Valid or can be made valid
         assert len(mesh.vertices) > 0
         assert len(mesh.faces) > 0
@@ -328,9 +328,9 @@ class TestMeshValidation:
     def test_mesh_export_formats(self):
         """Test different mesh export formats."""
         mesh = trimesh.creation.box(extents=[10, 10, 10])
-        
+
         formats = ["obj", "ply", "stl"]
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             for fmt in formats:
                 path = Path(tmpdir) / f"test.{fmt}"
@@ -341,7 +341,7 @@ class TestMeshValidation:
         """Test mesh bounding box calculation."""
         mesh = trimesh.creation.box(extents=[10, 10, 10])
         bounds = mesh.bounds
-        
+
         assert bounds.shape == (2, 3)  # min and max points in 3D
         assert np.allclose(bounds[1] - bounds[0], [10, 10, 10], atol=0.1)
 

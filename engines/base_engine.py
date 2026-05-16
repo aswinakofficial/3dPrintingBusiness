@@ -30,7 +30,9 @@ class Engine(ABC):
             config: EngineConfig instance
         """
         self.config = config
-        self.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            config.device if torch.cuda.is_available() else "cpu"
+        )
 
     @abstractmethod
     def validate_prerequisites(self) -> bool:

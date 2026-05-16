@@ -79,7 +79,7 @@ class TestMeshroomEngine:
         """Test engine info retrieval."""
         engine = MeshroomEngine(config)
         info = engine.get_engine_info()
-        
+
         assert info["name"] == "MeshroomEngine"
         assert info["min_images"] == 10
         assert info["max_images"] == 50
@@ -90,17 +90,17 @@ class TestMeshroomEngine:
     def test_minimum_images_requirement(self, config, insufficient_images):
         """Test that preprocessing validates minimum image count."""
         engine = MeshroomEngine(config)
-        
+
         with pytest.raises(ValueError) as exc_info:
             engine.preprocess(insufficient_images)
-        
+
         assert "at least" in str(exc_info.value).lower()
 
     def test_maximum_images_limit(self, config):
         """Test that preprocessing respects maximum image count."""
         config.max_images = 15
         engine = MeshroomEngine(config)
-        
+
         # Create 25 images
         paths = []
         for i in range(25):
@@ -108,7 +108,7 @@ class TestMeshroomEngine:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 img.save(f.name)
                 paths.append(f.name)
-        
+
         try:
             preprocessed = engine.preprocess(paths)
             # Should be limited to max_images
@@ -121,7 +121,7 @@ class TestMeshroomEngine:
         """Test preprocessing multiple images."""
         engine = MeshroomEngine(config)
         preprocessed = engine.preprocess(test_images)
-        
+
         # Should preprocess all test images (12)
         assert len(preprocessed) == 12
         for img in preprocessed:
@@ -148,7 +148,7 @@ class TestMeshroomEngine:
     def test_engine_config_inherits_base(self, config):
         """Test that Meshroom engine inherits from base correctly."""
         engine = MeshroomEngine(config)
-        
+
         # Should have base class attributes
         assert hasattr(engine, "device")
         assert hasattr(engine, "config")
@@ -172,7 +172,7 @@ class TestMeshroomIntegration:
         """Test that engine info has all required fields."""
         engine = MeshroomEngine(config)
         info = engine.get_engine_info()
-        
+
         required_fields = [
             "name",
             "device",
@@ -188,25 +188,25 @@ class TestMeshroomIntegration:
     def test_quality_settings(self, config):
         """Test quality setting options."""
         engine = MeshroomEngine(config)
-        
+
         # Test setting different quality levels
         engine.quality = "high"
         assert engine.quality == "high"
-        
+
         engine.quality = "medium"
         assert engine.quality == "medium"
-        
+
         engine.quality = "low"
         assert engine.quality == "low"
 
     def test_gpu_settings(self, config):
         """Test GPU setting configuration."""
         engine = MeshroomEngine(config)
-        
+
         # Test enabling/disabling GPU
         engine.use_gpu = True
         assert engine.use_gpu is True
-        
+
         engine.use_gpu = False
         assert engine.use_gpu is False
 

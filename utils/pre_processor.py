@@ -111,8 +111,7 @@ class ImageValidator:
                     )
                 # Find all images in directory
                 for ext in cls.SUPPORTED_FORMATS:
-                    validated.extend(sorted(image_path.glob(f"*{ext}"))
-                    )
+                    validated.extend(sorted(image_path.glob(f"*{ext}")))
                     validated.extend(sorted(image_path.glob(f"*{ext.upper()}")))
 
             # Single file input
@@ -150,7 +149,9 @@ class ImageValidator:
                 seen.add(path_str)
                 unique_validated.append(path)
 
-        logger.log_input_validation(len(unique_validated), [str(p) for p in unique_validated])
+        logger.log_input_validation(
+            len(unique_validated), [str(p) for p in unique_validated]
+        )
         return unique_validated
 
 
@@ -205,7 +206,9 @@ class ImagePreprocessor:
             logger.warning("rembg not installed, skipping background removal")
             return image
         except Exception as e:
-            logger.warning(f"Background removal failed: {e}, continuing without removal")
+            logger.warning(
+                f"Background removal failed: {e}, continuing without removal"
+            )
             return image
 
     @staticmethod

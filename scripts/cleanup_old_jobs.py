@@ -71,7 +71,9 @@ def cleanup_old_jobs(
             continue
 
         action = "Would delete" if not apply else "Deleting"
-        logger.info(f"{action}: {group.name} (state={state.state}, finished={finish_time})")
+        logger.info(
+            f"{action}: {group.name} (state={state.state}, finished={finish_time})"
+        )
         if apply:
             try:
                 client.container_groups.begin_delete(resource_group, group.name).wait()
@@ -125,7 +127,9 @@ def main() -> int:
         apply=args.apply,
     )
     verb = "Deleted" if args.apply else "Would delete"
-    logger.info(f"{verb} {count} terminal container group(s) older than {args.age_days}d.")
+    logger.info(
+        f"{verb} {count} terminal container group(s) older than {args.age_days}d."
+    )
     return 0
 
 

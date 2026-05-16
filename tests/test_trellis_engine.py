@@ -160,7 +160,13 @@ class TestTRELLIS2Integration:
         engine = TRELLIS2Engine(config)
         info = engine.get_engine_info()
 
-        required_fields = ["name", "device", "resolution", "max_images", "output_format"]
+        required_fields = [
+            "name",
+            "device",
+            "resolution",
+            "max_images",
+            "output_format",
+        ]
         for field in required_fields:
             assert field in info, f"Missing field: {field}"
 

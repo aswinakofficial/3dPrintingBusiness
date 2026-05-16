@@ -37,9 +37,11 @@ class TRELLIS2Engine(Engine):
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA not available — TRELLIS.2 requires NVIDIA GPU")
 
-        total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         if total_gb < 14:
-            raise RuntimeError(f"GPU has only {total_gb:.1f}GB, need 14GB+ for TRELLIS.2")
+            raise RuntimeError(
+                f"GPU has only {total_gb:.1f}GB, need 14GB+ for TRELLIS.2"
+            )
         if total_gb < 24:
             logger.warning(
                 f"GPU has {total_gb:.1f}GB — running at minimum VRAM, may OOM on complex scenes"
@@ -95,7 +97,9 @@ class TRELLIS2Engine(Engine):
                 queue.extend(obj)
             if hasattr(obj, "__dict__"):
                 queue.extend(vars(obj).values())
-        logger.info(f"Cast {n_bn} BatchNorm layer(s) to float32, rest stays in native dtype")
+        logger.info(
+            f"Cast {n_bn} BatchNorm layer(s) to float32, rest stays in native dtype"
+        )
         self.pipeline.cuda()
         self.pipeline_loaded = True
         logger.info(f"TRELLIS.2 pipeline ready in {time.time() - start:.1f}s")
@@ -104,7 +108,9 @@ class TRELLIS2Engine(Engine):
         if isinstance(image_paths, str):
             image_paths = [image_paths]
 
-        validated = ImageValidator.validate_input_images(image_paths, allow_directory=False)
+        validated = ImageValidator.validate_input_images(
+            image_paths, allow_directory=False
+        )
         if len(validated) > self.config.max_images:
             logger.warning(
                 f"Got {len(validated)} images, using first {self.config.max_images}"
@@ -128,6 +134,7 @@ class TRELLIS2Engine(Engine):
         # pipeline.run() accepts a single PIL Image; pick the view with the most
         # non-background content (largest subject area) — typically the frontal view.
         import numpy as np
+
         def _content_pixels(img: Image.Image) -> int:
             arr = np.array(img.convert("RGB"))
             return int(np.sum(np.any(arr < 240, axis=2)))
@@ -142,7 +149,9 @@ class TRELLIS2Engine(Engine):
         try:
             sm = torch.cuda.get_device_capability()
             dtype = torch.bfloat16 if sm[0] >= 8 else torch.float16
-            logger.info(f"GPU sm_{sm[0]}{sm[1]}: using {dtype} autocast, preprocess_image=True")
+            logger.info(
+                f"GPU sm_{sm[0]}{sm[1]}: using {dtype} autocast, preprocess_image=True"
+            )
             logger.info("Starting pipeline.run()...")
             # bfloat16 autocast: lets the pipeline run in its native mixed-precision
             # mode. BatchNorm layers were pre-cast to float32 (autocast keeps
@@ -158,16 +167,22 @@ class TRELLIS2Engine(Engine):
             mesh.attrs = mesh.attrs.float()
             n_active = mesh.coords.shape[0] if hasattr(mesh, "coords") else "unknown"
             logger.info(f"SLAT active voxels: {n_active}")
-            logger.info(f"Mesh before simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces")
+            logger.info(
+                f"Mesh before simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces"
+            )
             mesh.simplify(16777216)
-            logger.info(f"Mesh after simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces")
+            logger.info(
+                f"Mesh after simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces"
+            )
         except Exception as exc:
             torch.cuda.empty_cache()
             raise RuntimeError(f"TRELLIS.2 inference failed: {exc}")
 
         vram_used = torch.cuda.memory_allocated() / 1e9
         vram_reserved = torch.cuda.memory_reserved() / 1e9
-        logger.info(f"VRAM after inference: {vram_used:.1f}GB allocated, {vram_reserved:.1f}GB reserved")
+        logger.info(
+            f"VRAM after inference: {vram_used:.1f}GB allocated, {vram_reserved:.1f}GB reserved"
+        )
 
         # Move the pipeline off GPU before texture baking — nvdiffrast needs VRAM too.
         # The 4B model keeps ~8 GB in VRAM after empty_cache(); moving to CPU frees it.
@@ -176,7 +191,9 @@ class TRELLIS2Engine(Engine):
             logger.info("Pipeline moved to CPU")
         except Exception as e:
             logger.warning(f"Could not offload pipeline to CPU: {e}")
-        import gc; gc.collect()
+        import gc
+
+        gc.collect()
         torch.cuda.empty_cache()
         vram_used = torch.cuda.memory_allocated() / 1e9
         logger.info(f"VRAM after pipeline offload: {vram_used:.1f}GB allocated")
@@ -196,7 +213,9 @@ class TRELLIS2Engine(Engine):
         # faces — most vertices are isolated (no face references them).  Isolated
         # vertices render as dots in every viewer and also crash o_voxel's remesh.
         # Remove them and remap face indices before export.
-        unique_idx, inverse = torch.unique(raw_mesh.faces.reshape(-1), return_inverse=True)
+        unique_idx, inverse = torch.unique(
+            raw_mesh.faces.reshape(-1), return_inverse=True
+        )
         n_isolated = raw_mesh.vertices.shape[0] - unique_idx.shape[0]
         if n_isolated > 0:
             logger.info(
@@ -209,9 +228,13 @@ class TRELLIS2Engine(Engine):
             vertices = raw_mesh.vertices
             faces = raw_mesh.faces
 
-        logger.info(f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)...")
+        logger.info(
+            f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)..."
+        )
         t_glb = time.time()
-        logger.info(f"Mesh for export: {vertices.shape[0]:,} vertices, {faces.shape[0]:,} faces")
+        logger.info(
+            f"Mesh for export: {vertices.shape[0]:,} vertices, {faces.shape[0]:,} faces"
+        )
         glb = o_voxel.postprocess.to_glb(
             vertices=vertices,
             faces=faces,
@@ -225,7 +248,9 @@ class TRELLIS2Engine(Engine):
             remesh=False,
             verbose=True,
         )
-        logger.info(f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)")
+        logger.info(
+            f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)"
+        )
         glb.export(str(output_file), extension_webp=True)
         logger.info(f"Exported TRELLIS.2 output to {output_file}")
         return str(output_file)

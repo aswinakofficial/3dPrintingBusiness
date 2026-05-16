@@ -139,20 +139,19 @@ class AzureConfig:
                 resource_group
                 or os.getenv("AZURE_RESOURCE_GROUP", _DEFAULT_RESOURCE_GROUP)
             ),
-            location=(
-                location or os.getenv("AZURE_LOCATION", _DEFAULT_LOCATION)
-            ),
+            location=(location or os.getenv("AZURE_LOCATION", _DEFAULT_LOCATION)),
             container_apps_env=(
                 container_apps_env
                 or os.getenv("AZURE_CONTAINER_APPS_ENV", _DEFAULT_CONTAINER_APPS_ENV)
             ),
             file_storage_account=(
                 file_storage_account
-                or os.getenv("AZURE_FILE_STORAGE_ACCOUNT", _DEFAULT_FILE_STORAGE_ACCOUNT)
+                or os.getenv(
+                    "AZURE_FILE_STORAGE_ACCOUNT", _DEFAULT_FILE_STORAGE_ACCOUNT
+                )
             ),
             file_share=(
-                file_share
-                or os.getenv("AZURE_FILE_SHARE", _DEFAULT_FILE_SHARE)
+                file_share or os.getenv("AZURE_FILE_SHARE", _DEFAULT_FILE_SHARE)
             ),
             file_storage_name=(
                 os.getenv("AZURE_FILE_STORAGE_NAME", _DEFAULT_FILE_STORAGE_NAME)
@@ -347,11 +346,18 @@ class JobsRunner:
 
     def _fetch_file_storage_key(self) -> str:
         """Fetch the Azure Files account's primary key via the management plane."""
-        result = _az_json([
-            "storage", "account", "keys", "list",
-            "--resource-group", self.azure.resource_group,
-            "--account-name", self.azure.file_storage_account,
-        ])
+        result = _az_json(
+            [
+                "storage",
+                "account",
+                "keys",
+                "list",
+                "--resource-group",
+                self.azure.resource_group,
+                "--account-name",
+                self.azure.file_storage_account,
+            ]
+        )
         return result[0]["value"]
 
     def _get_env_id(self) -> str:
@@ -366,9 +372,15 @@ class JobsRunner:
         """Get ACR admin user/password (admin_enabled=true on the registry)."""
         if self._acr_creds is None:
             acr_name = self.azure.container_registry.split(".")[0]
-            creds = _az_json([
-                "acr", "credential", "show", "--name", acr_name,
-            ])
+            creds = _az_json(
+                [
+                    "acr",
+                    "credential",
+                    "show",
+                    "--name",
+                    acr_name,
+                ]
+            )
             user = creds["username"]
             pwd = creds["passwords"][0]["value"]
             self._acr_creds = (user, pwd)
@@ -395,6 +407,7 @@ class JobsRunner:
     def _ensure_directory(self, dir_path: str) -> None:
         """Create the directory tree (and parents) idempotently."""
         from azure.core.exceptions import ResourceExistsError
+
         parts = [p for p in dir_path.split("/") if p]
         cumulative = ""
         for part in parts:
@@ -582,9 +595,7 @@ class JobsRunner:
             except Exception as e:
                 logger.warning(f"Monitor error: {e}")
                 time.sleep(poll_interval)
-        logger.error(
-            f"Execution {execution_name} exceeded {max_wait}s runtime cap"
-        )
+        logger.error(f"Execution {execution_name} exceeded {max_wait}s runtime cap")
         return False
 
     def download_output(self, job_id: str, target: Path) -> Path:
@@ -626,12 +637,21 @@ class JobsRunner:
         try:
             result = subprocess.run(
                 [
-                    "az", "containerapp", "job", "logs", "show",
-                    "--name", job_id,
-                    "--resource-group", self.azure.resource_group,
-                    "--container", job_id.split("-")[0],  # 'trellis' / 'meshroom'
-                    "--follow", "false",
-                    "-o", "tsv",
+                    "az",
+                    "containerapp",
+                    "job",
+                    "logs",
+                    "show",
+                    "--name",
+                    job_id,
+                    "--resource-group",
+                    self.azure.resource_group,
+                    "--container",
+                    job_id.split("-")[0],  # 'trellis' / 'meshroom'
+                    "--follow",
+                    "false",
+                    "-o",
+                    "tsv",
                 ],
                 capture_output=True,
                 text=True,
