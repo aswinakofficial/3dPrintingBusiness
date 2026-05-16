@@ -234,6 +234,11 @@ class TRELLIS2Engine(Engine):
         logger.info(
             f"Mesh for export: {vertices.shape[0]:,} vertices, {faces.shape[0]:,} faces"
         )
+        # remesh=True: narrow-band dual contouring rebuilds topology from scratch,
+        # avoiding remove_small_connected_components() which destroys the
+        # fragmented marching-cubes mesh that TRELLIS.2 outputs.
+        # remesh_project=0: skip projection back to original surface (faster,
+        # matches official app.py defaults).
         glb = o_voxel.postprocess.to_glb(
             vertices=vertices,
             faces=faces,
@@ -242,9 +247,11 @@ class TRELLIS2Engine(Engine):
             attr_layout=raw_mesh.layout,
             voxel_size=raw_mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-            decimation_target=1000000,
-            texture_size=4096,
-            remesh=False,
+            decimation_target=500000,
+            texture_size=2048,
+            remesh=True,
+            remesh_band=1,
+            remesh_project=0,
             verbose=True,
         )
         logger.info(
