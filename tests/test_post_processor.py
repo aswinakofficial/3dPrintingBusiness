@@ -89,9 +89,6 @@ class TestMeshRepair:
     def test_repair_mesh_stats(self, config, simple_cube):
         """Test that repair preserves mesh statistics."""
         repair = MeshRepair(config)
-        original_vertices = len(simple_cube.vertices)
-        original_faces = len(simple_cube.faces)
-
         repaired = repair.repair_mesh(simple_cube)
 
         # Repaired mesh should have similar statistics
@@ -128,7 +125,7 @@ class TestMeshHollowing:
 
     def test_watertight_mesh_check(self, config, solid_sphere):
         """Test that watertight meshes are identified."""
-        hollowing = MeshHollowing(config)
+        MeshHollowing(config)
 
         # Sphere should be watertight
         assert solid_sphere.is_watertight
@@ -293,7 +290,7 @@ class TestPostProcessingIntegration:
 
     def test_pipeline_mesh_loading(self, config, test_mesh_file):
         """Test pipeline can load and process mesh."""
-        pipeline = PostProcessingPipeline(config)
+        PostProcessingPipeline(config)
 
         # Test loading mesh
         mesh = trimesh.load(test_mesh_file)

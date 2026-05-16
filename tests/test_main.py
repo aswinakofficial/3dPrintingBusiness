@@ -4,10 +4,8 @@ Tests CLI argument parsing, configuration, and pipeline execution.
 """
 
 import json
-import tempfile
 from pathlib import Path
-from unittest import mock
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

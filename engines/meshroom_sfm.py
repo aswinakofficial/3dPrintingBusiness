@@ -2,7 +2,6 @@
 
 import subprocess
 import os
-import json
 import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Union
@@ -56,7 +55,7 @@ class MeshroomEngine(Engine):
         self.cache_path = None
 
         logger.info(
-            f"Initializing MeshroomEngine",
+            "Initializing MeshroomEngine",
             extra={
                 "device": str(self.device),
                 "max_images": config.max_images,
@@ -288,7 +287,7 @@ class MeshroomEngine(Engine):
             Dict with success status and output paths
         """
         logger.info(
-            f"Running Meshroom photogrammetry pipeline...",
+            "Running Meshroom photogrammetry pipeline...",
             extra={
                 "input_dir": input_dir,
                 "output_dir": output_dir,

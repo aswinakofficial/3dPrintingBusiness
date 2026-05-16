@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, List, Union
 
 import torch
-import trimesh
 from PIL import Image
 
 from engines.base_engine import Engine, EngineConfig

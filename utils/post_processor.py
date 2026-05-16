@@ -1,12 +1,11 @@
 """Post-processing pipeline for 3D mesh preparation and 3D printing optimization."""
 
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import numpy as np
 
 import trimesh
-import logging
 
 from utils.logger import get_logger
 
@@ -326,9 +325,6 @@ class MeshHollowing:
         """
         try:
             logger.debug(f"Using offset method with wall thickness {wall_thickness}mm")
-
-            # Calculate inset normal
-            inset_factor = -wall_thickness / 100  # Convert mm to normalized units
 
             # Try trimesh offset (may not be available)
             if hasattr(mesh, "apply_scale"):

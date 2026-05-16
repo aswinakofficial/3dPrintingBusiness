@@ -3,15 +3,14 @@ Unit tests for TRELLIS.2 engine.
 Tests engine initialization, preprocessing, and inference.
 """
 
-import pytest
-from pathlib import Path
 import tempfile
-import sys
-import os
+from pathlib import Path
+
+import pytest
 
 # Skip tests if torch not available
 torch = pytest.importorskip("torch")
-from PIL import Image
+from PIL import Image  # noqa: E402
 
 from engines.trellis_v2 import TRELLIS2Engine
 from engines.base_engine import EngineConfig
@@ -137,7 +136,7 @@ class TestTRELLIS2Engine:
     def test_prerequisite_validation_cuda_required(self, config):
         """Test prerequisite validation requires CUDA."""
         config.device = "cuda"
-        engine = TRELLIS2Engine(config)
+        TRELLIS2Engine(config)
 
         # This will check CUDA and memory, but skip model loading in test
         # (model loading requires network and authentication)

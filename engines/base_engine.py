@@ -2,8 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Union, List, Optional, Dict, Any
-from pathlib import Path
+from typing import Union, List, Dict, Any
 
 import torch
 

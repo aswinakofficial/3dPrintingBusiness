@@ -3,13 +3,10 @@ Image preprocessing and multi-image input handling.
 Supports flexible input for both TRELLIS.2 (1-4 images) and Meshroom (10-50+ images).
 """
 
-import os
 from pathlib import Path
 from typing import Union, List, Optional
-import json
 
 from PIL import Image
-import cv2
 
 from utils.logger import get_logger
 
@@ -38,13 +35,13 @@ class ImageValidator:
 
         # Check file exists
         if not image_path.exists():
-            logger.error(f"Image file not found", file=str(image_path))
+            logger.error("Image file not found", file=str(image_path))
             return False
 
         # Check format
         if image_path.suffix.lower() not in cls.SUPPORTED_FORMATS:
             logger.error(
-                f"Unsupported image format",
+                "Unsupported image format",
                 file=image_path.name,
                 format=image_path.suffix,
                 supported=list(cls.SUPPORTED_FORMATS),
@@ -57,7 +54,7 @@ class ImageValidator:
                 width, height = img.size
                 if width < cls.MIN_RESOLUTION or height < cls.MIN_RESOLUTION:
                     logger.error(
-                        f"Image too small",
+                        "Image too small",
                         file=image_path.name,
                         resolution=f"{width}x{height}",
                         minimum=cls.MIN_RESOLUTION,
@@ -65,14 +62,14 @@ class ImageValidator:
                     return False
                 if width > cls.MAX_RESOLUTION or height > cls.MAX_RESOLUTION:
                     logger.error(
-                        f"Image too large",
+                        "Image too large",
                         file=image_path.name,
                         resolution=f"{width}x{height}",
                         maximum=cls.MAX_RESOLUTION,
                     )
                     return False
         except Exception as e:
-            logger.error(f"Failed to read image", file=image_path.name, error=str(e))
+            logger.error("Failed to read image", file=image_path.name, error=str(e))
             return False
 
         return True
@@ -106,8 +103,8 @@ class ImageValidator:
             if image_path.is_dir():
                 if not allow_directory:
                     raise ValueError(
-                        f"Directory input not allowed for this engine. "
-                        f"Provide individual image files or use Meshroom engine."
+                        "Directory input not allowed for this engine. "
+                        "Provide individual image files or use Meshroom engine."
                     )
                 # Find all images in directory
                 for ext in cls.SUPPORTED_FORMATS:
@@ -173,7 +170,7 @@ class ImagePreprocessor:
         try:
             img = Image.open(image_path).convert("RGB")
             logger.debug(
-                f"Loaded image",
+                "Loaded image",
                 file=image_path.name,
                 size=f"{img.width}x{img.height}",
             )
@@ -255,8 +252,6 @@ class ImagePreprocessor:
             Focal length in pixels, or None if not found
         """
         try:
-            from PIL.Image import Exif
-
             image = Image.open(image_path)
             exif = image.getexif()
 

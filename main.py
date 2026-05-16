@@ -241,12 +241,12 @@ class Pipeline:
             if not self.generate_views and len(validated_paths) > 4:
                 raise ValueError(
                     f"TRELLIS.2 supports max 4 images, got {len(validated_paths)}. "
-                    f"Tip: use --generate-views to auto-select the best 4."
+                    "Tip: use --generate-views to auto-select the best 4."
                 )
             if self.generate_views:
                 logger.info(
                     f"✓ TRELLIS.2: {len(validated_paths)} source image(s) "
-                    f"(will be reduced to 4 after view generation)"
+                    "(will be reduced to 4 after view generation)"
                 )
             else:
                 logger.info(f"✓ TRELLIS.2: {len(validated_paths)} images (max 4)")
@@ -258,13 +258,13 @@ class Pipeline:
             if self.generate_views:
                 logger.info(
                     f"✓ Meshroom: {len(validated_paths)} source image(s) "
-                    f"(additional views will be generated)"
+                    "(additional views will be generated)"
                 )
             else:
                 if len(validated_paths) < 10:
                     raise ValueError(
                         f"Meshroom requires min 10 images, got {len(validated_paths)}. "
-                        f"Tip: use --generate-views to synthesise the remaining views automatically."
+                        "Tip: use --generate-views to synthesise the remaining views automatically."
                     )
                 logger.info(f"✓ Meshroom: {len(validated_paths)} images (10-50 range)")
 
@@ -332,7 +332,7 @@ class Pipeline:
 
                 # Normalize
                 image = preprocessor.normalize_image(image)
-                logger.info(f"  ✓ Normalized to RGB")
+                logger.info("  ✓ Normalized to RGB")
 
                 # Save preprocessed image
                 output_path = self.session_dir / f"preprocessed_{idx:02d}.png"
@@ -422,7 +422,7 @@ class Pipeline:
 
             results = pipeline.process_mesh(raw_mesh_path, output_mesh_path)
 
-            logger.info(f"✓ Mesh post-processing complete")
+            logger.info("✓ Mesh post-processing complete")
             logger.info(f"  Final mesh: {results['mesh_path']}")
             logger.info(
                 f"  Vertices: {results['vertices']:,} | Faces: {results['faces']:,}"
@@ -525,7 +525,7 @@ Examples:
         "--engine",
         choices=get_available_engines(),
         default="trellis",
-        help=f"3D generation engine (default: trellis)",
+        help="3D generation engine (default: trellis)",
     )
 
     # Input handling
@@ -678,9 +678,9 @@ Examples:
             pp_config,
             generate_views=args.generate_views,
         )
-        results = pipeline.run(image_paths)
+        pipeline.run(image_paths)
 
-        logger.info(f"✓ Pipeline completed successfully")
+        logger.info("✓ Pipeline completed successfully")
         return 0
 
     except FileNotFoundError as e:

@@ -3,7 +3,7 @@ Engine factory and loader for 3D Figurine Lab.
 Provides dynamic engine selection and initialization.
 """
 
-from typing import Optional, Type, Dict, List
+from typing import Type, Dict, List
 from engines.base_engine import Engine, EngineConfig
 from engines.trellis_v2 import TRELLIS2Engine
 from engines.meshroom_sfm import MeshroomEngine

@@ -3,7 +3,6 @@ Structured logging for 3D Figurine Lab pipeline.
 Provides JSON-formatted logs with context, rotation, and GPU metrics.
 """
 
-import sys
 import json
 from datetime import datetime
 from pathlib import Path
@@ -181,7 +180,7 @@ class StructuredLogger:
     ):
         """Log post-processing completion."""
         self.info(
-            f"Post-processing complete",
+            "Post-processing complete",
             duration_ms=duration_ms,
             input=Path(input_file).name,
             output=Path(output_file).name,
