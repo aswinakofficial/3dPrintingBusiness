@@ -78,6 +78,7 @@ class TestTRELLIS2Engine:
         assert info["name"] == "TRELLIS2Engine"
         assert info["max_images"] == 4
         assert info["resolution"] == 1024
+        assert "model_id" in info
 
     def test_image_preprocessing_single(self, config, test_image):
         """Test single image preprocessing."""
@@ -166,6 +167,7 @@ class TestTRELLIS2Integration:
             "resolution",
             "max_images",
             "output_format",
+            "model_id",
         ]
         for field in required_fields:
             assert field in info, f"Missing field: {field}"

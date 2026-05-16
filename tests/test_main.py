@@ -20,7 +20,8 @@ class TestConfig:
     def test_config_initialization_valid(self, tmp_path):
         """Test config loads successfully from valid YAML."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 paths:
   input: ./input
   output: ./output
@@ -28,7 +29,8 @@ paths:
 runtime:
   local_gpu: false
   cloud_provider: azure
-""")
+"""
+        )
 
         config = Config(str(config_file))
         assert config.data is not None
@@ -51,13 +53,15 @@ runtime:
     def test_config_get_dot_notation(self, tmp_path):
         """Test config.get() with dot notation."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 paths:
   input: ./input
   output: ./output
 runtime:
   local_gpu: false
-""")
+"""
+        )
 
         config = Config(str(config_file))
         assert config.get("paths.input") == "./input"
@@ -67,7 +71,9 @@ runtime:
     def test_config_get_default(self, tmp_path):
         """Test config.get() with default value."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("paths:\n  input: ./input\n")
+        config_file.write_text(
+            "paths:\n  input: ./input\nruntime:\n  local_gpu: false\n"
+        )
 
         config = Config(str(config_file))
         assert config.get("nonexistent.key", "default") == "default"
@@ -102,7 +108,8 @@ class TestPipeline:
     def config_and_temp_dir(self, tmp_path):
         """Create config and temporary directory."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(f"""
+        config_file.write_text(
+            f"""
 paths:
   input: {tmp_path / 'input'}
   output: {tmp_path / 'output'}
@@ -118,7 +125,8 @@ post_processing:
     wall_thickness_mm: 2.0
   supports:
     enabled: false
-""")
+"""
+        )
         config = Config(str(config_file))
         return config, tmp_path
 
@@ -180,12 +188,12 @@ post_processing:
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("trellis", config)
 
-        # Create fake image files
+        # Create fake image files (must be >=256px to pass size validation)
         from PIL import Image
 
         images = []
         for i in range(5):
-            img = Image.new("RGB", (100, 100))
+            img = Image.new("RGB", (512, 512))
             path = tmp_path / f"image_{i}.jpg"
             img.save(path)
             images.append(str(path))
@@ -200,12 +208,12 @@ post_processing:
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("meshroom", config)
 
-        # Create fake image files
+        # Create fake image files (must be >=256px to pass size validation)
         from PIL import Image
 
         images = []
         for i in range(5):
-            img = Image.new("RGB", (100, 100))
+            img = Image.new("RGB", (512, 512))
             path = tmp_path / f"image_{i}.jpg"
             img.save(path)
             images.append(str(path))
@@ -220,12 +228,12 @@ post_processing:
         config, base_tmp_path = config_and_temp_dir
         pipeline = Pipeline("meshroom", config)
 
-        # Create fake image files
+        # Create fake image files (must be >=256px to pass size validation)
         from PIL import Image
 
         images = []
         for i in range(51):
-            img = Image.new("RGB", (100, 100))
+            img = Image.new("RGB", (512, 512))
             path = tmp_path / f"image_{i}.jpg"
             img.save(path)
             images.append(str(path))
@@ -382,7 +390,8 @@ class TestPipelineIntegration:
         """Setup for full pipeline tests."""
         # Create config
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(f"""
+        config_file.write_text(
+            f"""
 paths:
   input: {tmp_path / 'input'}
   output: {tmp_path / 'output'}
@@ -393,7 +402,8 @@ post_processing:
   auto_repair: true
   hollowing:
     enabled: false
-""")
+"""
+        )
 
         # Create test image
         from PIL import Image

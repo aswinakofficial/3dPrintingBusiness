@@ -256,9 +256,6 @@ class TRELLIS2Engine(Engine):
         return str(output_file)
 
     def get_engine_info(self) -> dict:
-        return {
-            "name": "TRELLIS.2",
-            "model_id": self.MODEL_ID,
-            "max_images": self.config.max_images,
-            "device": str(self.device),
-        }
+        info = super().get_engine_info()
+        info["model_id"] = self.MODEL_ID
+        return info

@@ -97,11 +97,10 @@ class TestMeshroomEngine:
         assert "at least" in str(exc_info.value).lower()
 
     def test_maximum_images_limit(self, config):
-        """Test that preprocessing respects maximum image count."""
-        config.max_images = 15
+        """Test that preprocessing respects the engine's hard MESHROOM_MAX_IMAGES cap."""
         engine = MeshroomEngine(config)
 
-        # Create 25 images
+        # Create 25 images (well within MESHROOM_MAX_IMAGES=50)
         paths = []
         for i in range(25):
             img = Image.new("RGB", (512, 512), color=(100, 150, 200))
@@ -111,8 +110,7 @@ class TestMeshroomEngine:
 
         try:
             preprocessed = engine.preprocess(paths)
-            # Should be limited to max_images
-            assert len(preprocessed) <= config.max_images
+            assert len(preprocessed) <= MeshroomEngine.MESHROOM_MAX_IMAGES
         finally:
             for path in paths:
                 Path(path).unlink()

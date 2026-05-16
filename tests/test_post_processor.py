@@ -321,7 +321,7 @@ class TestMeshValidation:
         """Test properties of valid mesh."""
         mesh = trimesh.creation.box(extents=[10, 10, 10])
 
-        assert mesh.is_valid or True  # Valid or can be made valid
+        assert mesh.is_volume  # box() creates a closed watertight mesh
         assert len(mesh.vertices) > 0
         assert len(mesh.faces) > 0
 
