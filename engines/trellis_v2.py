@@ -204,7 +204,7 @@ class TRELLIS2Engine(Engine):
                 f"({raw_mesh.vertices.shape[0]:,} → {unique_idx.shape[0]:,})"
             )
             vertices = raw_mesh.vertices[unique_idx]
-            faces = inverse.reshape(raw_mesh.faces.shape)
+            faces = inverse.reshape(raw_mesh.faces.shape).to(torch.int32)
         else:
             vertices = raw_mesh.vertices
             faces = raw_mesh.faces
