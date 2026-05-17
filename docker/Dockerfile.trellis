@@ -79,7 +79,9 @@ RUN pip install --no-cache-dir \
 # inherit from nn.Module (not PreTrainedModel) and lack this method. Patch modeling_utils to
 # use getattr with a safe default so these models load without AttributeError.
 # Single-line python3 -c to avoid Dockerfile parser treating newlines as new instructions.
-RUN python3 -c "import transformers.modeling_utils as mu, pathlib; f = pathlib.Path(mu.__file__); content = f.read_text(); old = 'model._named_pretrained_submodules'; new = 'getattr(model, ' + repr('_named_pretrained_submodules') + ', lambda: iter([]))'; f.write_text(content.replace(old, new)) if old in content else print('WARNING: pattern not found in', f)"
+# The call site is conversion_mapping.py (not modeling_utils.py): it accesses the attribute
+# as a plain iterable `for x in model._named_pretrained_submodules`, so default is [].
+RUN python3 -c "import transformers.conversion_mapping as cm, pathlib; f = pathlib.Path(cm.__file__); content = f.read_text(); old = 'model._named_pretrained_submodules'; new = 'getattr(model, ' + repr('_named_pretrained_submodules') + ', [])'; f.write_text(content.replace(old, new)) if old in content else print('WARNING: pattern not found in', f)"
 
 RUN pip install --no-cache-dir \
     git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
