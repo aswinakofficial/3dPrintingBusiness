@@ -226,91 +226,50 @@ class TRELLIS2Engine(Engine):
         return mesh, res
 
     def postprocess(self, infer_output: Any) -> str:
-        """Export Trellis2Mesh as a watertight GLB using Open3D Poisson reconstruction.
+        """Export Trellis2Mesh via o_voxel.postprocess.to_glb() with DC remesh.
 
-        TRELLIS.2's marching-cubes output is non-watertight: the sparse voxel grid
-        produces many disconnected face patches separated by gaps.  The correct fix
-        is o_voxel.postprocess.to_glb(remesh=True) (Dual Contouring), but DC remesh
-        at 1024^3 times out.  Instead we run Poisson surface reconstruction on the
-        full set of marching-cubes vertex positions — they are dense surface samples
-        even when not connected by faces — to produce a watertight, print-ready mesh.
-        Falls back to direct trimesh export if Open3D is unavailable.
+        DC remesh resolution is capped at 512^3 by scripts/patch_trellis2.py so the
+        operation completes in ~2 min instead of timing out at 1024^3.  The patch also
+        adds post-remesh cleanup (remove_duplicate_faces, fill_holes, etc.) to produce
+        a watertight, slicer-ready GLB with UV-baked PBR textures.
+        Falls back to a direct vertex-color trimesh export if to_glb() raises.
         """
+        import o_voxel
+
         raw_mesh, res = infer_output  # noqa: F841
         output_dir = Path("/app/output/trellis")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = output_dir / f"trellis_{timestamp}_print.glb"
 
-        # ALL raw_mesh vertices (including isolated ones) are surface samples from
-        # the SLAT marching-cubes — use them as the Poisson point cloud.
-        all_verts = raw_mesh.vertices.cpu().float().numpy().copy()
-        logger.info(f"Raw mesh: {all_verts.shape[0]:,} surface points")
-
-        # Swap Y/Z for GLTF Y-up convention (TRELLIS.2 internal space is Z-up)
-        all_verts[:, 1], all_verts[:, 2] = (
-            all_verts[:, 2].copy(),
-            -all_verts[:, 1].copy(),
-        )
-
         try:
-            import open3d as o3d
-
             logger.info(
-                f"Poisson reconstruction (depth=9) on {all_verts.shape[0]:,} points..."
+                "Running to_glb() — DC remesh capped at 512^3, "
+                "decimation_target=300K, texture_size=1024"
             )
             t0 = time.time()
-
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(all_verts)
-            pcd.estimate_normals(
-                search_param=o3d.geometry.KDTreeSearchParamHybrid(
-                    radius=0.02, max_nn=30
-                )
+            glb = o_voxel.postprocess.to_glb(
+                vertices=raw_mesh.vertices,
+                faces=raw_mesh.faces,
+                attr_volume=raw_mesh.attrs,
+                coords=raw_mesh.coords,
+                attr_layout=raw_mesh.layout,
+                voxel_size=raw_mesh.voxel_size,
+                aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+                decimation_target=300_000,
+                texture_size=1024,
+                remesh=True,
+                remesh_band=1,
+                remesh_project=0,
+                verbose=True,
             )
-            pcd.orient_normals_consistent_tangent_plane(100)
-
-            (
-                mesh_o3d,
-                densities,
-            ) = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-                pcd, depth=9, scale=1.1, linear_fit=False
-            )
-
-            # Remove low-density vertices — Poisson extrapolates slightly outside the
-            # real surface; clipping the bottom 5% by density removes those artifacts.
-            dens = np.asarray(densities)
-            mesh_o3d.remove_vertices_by_mask(dens < np.percentile(dens, 5))
-            mesh_o3d.remove_degenerate_triangles()
-            mesh_o3d.remove_unreferenced_vertices()
-
-            n_v = len(mesh_o3d.vertices)
-            n_f = len(mesh_o3d.triangles)
-            logger.info(
-                f"Poisson mesh: {n_v:,} vertices, {n_f:,} faces ({time.time()-t0:.1f}s)"
-            )
-
-            # Decimate to a count manageable by slicer software
-            target = 300_000
-            if n_f > target:
-                mesh_o3d = mesh_o3d.simplify_quadric_decimation(target)
-                logger.info(f"Decimated to {len(mesh_o3d.triangles):,} faces")
-
-            verts_out = np.asarray(mesh_o3d.vertices, dtype=np.float32)
-            faces_out = np.asarray(mesh_o3d.triangles, dtype=np.int32)
-            mesh_out = trimesh.Trimesh(
-                vertices=verts_out, faces=faces_out, process=False
-            )
-            mesh_out.export(str(output_file))
-            logger.info(
-                f"Exported watertight GLB: {len(mesh_out.vertices):,} v, "
-                f"{len(mesh_out.faces):,} f → {output_file}"
-            )
+            glb.export(str(output_file))
+            logger.info(f"to_glb() done in {time.time() - t0:.1f}s → {output_file}")
             return str(output_file)
 
         except Exception as exc:
             logger.warning(
-                f"Poisson reconstruction failed ({exc}); falling back to direct trimesh export"
+                f"to_glb() failed ({exc}); falling back to direct trimesh export"
             )
 
         # ── Fallback: direct trimesh export (non-watertight, vertex-color) ──────

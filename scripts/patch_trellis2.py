@@ -115,6 +115,83 @@ def patch_trellis2_pipeline():
         print("[DONE] no changes needed")
 
 
+def patch_ovoxel_postprocess():
+    """
+    o_voxel/postprocess.py — two changes (from kngsly/trellis2-worker):
+
+    A. Cap DC remesh resolution to 512.  The SLAT is generated at 1024^3, but
+       cumesh.remeshing.remesh_narrow_band_dc() at 1024^3 takes >36 min with
+       source-compiled cumesh (no optimised kernels).  Capping at 512 brings it to
+       ~2 min while still giving 0.2 mm precision on a 100 mm figurine.
+
+    B. Add cleanup after the remesh-branch simplify.  The standard pipeline
+       (remesh=False) already runs remove_duplicate_faces / repair_non_manifold_edges /
+       remove_small_connected_components / fill_holes / unify_face_orientations, but
+       the remesh=True branch lacks this step — leaving non-manifold edges that
+       prevent watertight export and break slicer software.
+    """
+    found = None
+    for candidate in pathlib.Path("/usr/local/lib").rglob("o_voxel/postprocess.py"):
+        found = candidate
+        break
+    if found is None:
+        print(
+            "[ERROR] o_voxel/postprocess.py not found under /usr/local/lib",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    content = found.read_text()
+    changed = False
+
+    # ── Patch A: resolution cap ──────────────────────────────────────────────
+    old_a = "        resolution = grid_size.max().item()"
+    new_a = (
+        "        resolution = grid_size.max().item()\n"
+        "        # cap DC remesh to 512^3: 1024^3 times out without optimised cumesh wheels\n"
+        "        resolution = min(resolution, 512)"
+    )
+    if old_a in content and "min(resolution, 512)" not in content:
+        content = content.replace(old_a, new_a, 1)
+        print("[OK] o_voxel/postprocess.py: capped DC remesh resolution to 512")
+        changed = True
+    else:
+        print("[SKIP] o_voxel resolution cap: already patched or pattern not found")
+
+    # ── Patch B: post-remesh cleanup ─────────────────────────────────────────
+    # The remesh branch's simplify call is uniquely identified by its verbose print.
+    old_b = (
+        "        mesh.simplify(decimation_target, verbose=verbose)\n"
+        "        if verbose:\n"
+        '            print(f"After simplifying: {mesh.num_vertices} vertices, {mesh.num_faces} faces")'
+    )
+    new_b = (
+        "        mesh.simplify(decimation_target, verbose=verbose)\n"
+        "        if verbose:\n"
+        '            print(f"After simplifying: {mesh.num_vertices} vertices, {mesh.num_faces} faces")\n'
+        "        mesh.remove_duplicate_faces()\n"
+        "        mesh.repair_non_manifold_edges()\n"
+        "        mesh.remove_small_connected_components(1e-5)\n"
+        "        mesh.fill_holes(max_hole_perimeter=3e-2)\n"
+        "        mesh.unify_face_orientations()"
+    )
+    if old_b in content and "unify_face_orientations" not in content:
+        content = content.replace(old_b, new_b, 1)
+        print("[OK] o_voxel/postprocess.py: added post-remesh cleanup")
+        changed = True
+    else:
+        print(
+            "[SKIP] o_voxel post-remesh cleanup: already patched or pattern not found"
+        )
+
+    if changed:
+        found.write_text(content)
+        print(f"[DONE] wrote patches to {found}")
+    else:
+        print("[DONE] no changes needed")
+
+
 if __name__ == "__main__":
     patch_conversion_mapping()
     patch_trellis2_pipeline()
+    patch_ovoxel_postprocess()
