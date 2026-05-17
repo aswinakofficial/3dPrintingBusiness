@@ -146,6 +146,26 @@ class TRELLIS2Engine(Engine):
             f"Selected image {idx}/{len(preprocessed_images)} as primary view "
             f"({image.size[0]}x{image.size[1]}, highest content area)"
         )
+
+        # Remove background ourselves so TRELLIS.2 receives an RGBA image with real
+        # alpha.  preprocess_image() checks `not np.all(alpha == 255)` and skips its
+        # internal BiRefNet call when has_alpha=True — this avoids the trust_remote_code
+        # model-load crash (BiRefNet inherits nn.Module, not PreTrainedModel, so
+        # transformers attributes like all_tied_weights_keys are missing).
+        try:
+            import rembg as _rembg
+
+            _session = _rembg.new_session("u2net")
+            image = _rembg.remove(image, session=_session)
+            logger.info(
+                f"Background removed (rembg/u2net); image is now {image.mode} "
+                f"{image.size[0]}x{image.size[1]}"
+            )
+        except Exception as _bg_err:
+            logger.warning(
+                f"Background removal failed ({_bg_err}); passing raw RGB image to pipeline"
+            )
+
         start = time.time()
         try:
             sm = torch.cuda.get_device_capability()

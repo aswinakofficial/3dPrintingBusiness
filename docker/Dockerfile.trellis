@@ -129,6 +129,11 @@ RUN sed -i "s/SPCONV_ALGO = 'auto'/SPCONV_ALGO = 'native'/" \
 # Make trellis2 package importable
 ENV PYTHONPATH=/opt/trellis2-repo:${PYTHONPATH}
 
+# Comprehensive Python-based compatibility patches for TRELLIS.2 + transformers.
+# Copies the script early so Docker cache invalidates only when the script changes.
+COPY scripts/patch_trellis2.py /tmp/patch_trellis2.py
+RUN python3 /tmp/patch_trellis2.py
+
 # Copy app code last (best cache reuse on iteration)
 COPY config.yaml .
 COPY main.py .
