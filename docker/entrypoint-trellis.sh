@@ -21,6 +21,15 @@ print(f"CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
     print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
+    try:
+        import ctypes, ctypes.util
+        nvml = ctypes.CDLL("libnvidia-ml.so.1")
+        nvml.nvmlInit()
+        buf = ctypes.create_string_buffer(80)
+        nvml.nvmlSystemGetDriverVersion(buf, 80)
+        print(f"NVIDIA driver: {buf.value.decode()}")
+    except Exception as e:
+        print(f"NVIDIA driver: (could not query: {e})")
 else:
     print("⚠️  WARNING: CUDA not available, will use CPU (slow)")
 EOF
