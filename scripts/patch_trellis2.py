@@ -117,18 +117,16 @@ def patch_trellis2_pipeline():
 
 def patch_ovoxel_postprocess():
     """
-    o_voxel/postprocess.py — two changes (from kngsly/trellis2-worker):
+    o_voxel/postprocess.py — Patch A only:
 
-    A. Cap DC remesh resolution to 512.  The SLAT is generated at 1024^3, but
-       cumesh.remeshing.remesh_narrow_band_dc() at 1024^3 takes >36 min with
-       source-compiled cumesh (no optimised kernels).  Capping at 512 brings it to
-       ~2 min while still giving 0.2 mm precision on a 100 mm figurine.
+    Cap DC remesh resolution to 512.  The SLAT is generated at 1024^3, but
+    cumesh.remeshing.remesh_narrow_band_dc() at 1024^3 takes >36 min with
+    source-compiled cumesh (no optimised kernels).  Capping at 512 brings it to
+    ~2 min while still giving 0.2 mm precision on a 100 mm figurine.
 
-    B. Add cleanup after the remesh-branch simplify.  The standard pipeline
-       (remesh=False) already runs remove_duplicate_faces / repair_non_manifold_edges /
-       remove_small_connected_components / fill_holes / unify_face_orientations, but
-       the remesh=True branch lacks this step — leaving non-manifold edges that
-       prevent watertight export and break slicer software.
+    Post-remesh fragment cleanup is handled by the trimesh safety net in
+    engines/trellis_v2.py postprocess() — cumesh cleanup calls on the source-compiled
+    build crash with CUDA error 9 (invalid configuration argument) for large meshes.
     """
     found = None
     for candidate in pathlib.Path("/usr/local/lib").rglob("o_voxel/postprocess.py"):
@@ -157,48 +155,6 @@ def patch_ovoxel_postprocess():
         changed = True
     else:
         print("[SKIP] o_voxel resolution cap: already patched or pattern not found")
-
-    # ── Patch B: post-remesh cleanup (regex for robust indentation match) ────
-    # Sentinel identifies whether this patch was already applied.
-    _b_sentinel = "remove_small_connected_components(0.005)"
-    if _b_sentinel in content:
-        print("[SKIP] o_voxel post-remesh cleanup: already patched")
-    else:
-        # The remesh branch has a unique verbose print after its simplify call.
-        # Use regex to tolerate variation in indentation depth.
-        m_b = re.search(
-            r"( {4,})(mesh\.simplify\(decimation_target,[ \t]*verbose=verbose\))\n"
-            r"( +if verbose:\n"
-            r' +print\(f"After simplifying:)',
-            content,
-        )
-        if m_b:
-            indent = m_b.group(1)
-            region_end = (
-                content.index("\n", content.index("After simplifying:", m_b.start()))
-                + 1
-            )
-            replacement = (
-                f"{indent}mesh.simplify(decimation_target, verbose=verbose)\n"
-                f"{indent}if verbose:\n"
-                f'{indent}    print(f"After simplifying: {{mesh.num_vertices}} vertices,'
-                f' {{mesh.num_faces}} faces")\n'
-                f"{indent}mesh.remove_duplicate_faces()\n"
-                f"{indent}mesh.repair_non_manifold_edges()\n"
-                f"{indent}mesh.remove_small_connected_components(0.005)\n"
-                f"{indent}mesh.fill_holes(max_hole_perimeter=5e-2)\n"
-                f"{indent}mesh.unify_face_orientations()"
-            )
-            content = content[: m_b.start()] + replacement + content[region_end:]
-            print(
-                "[OK] o_voxel/postprocess.py: added post-remesh cleanup (threshold=0.005)"
-            )
-            changed = True
-        else:
-            print(
-                "[SKIP] o_voxel post-remesh cleanup: pattern not found "
-                "(already patched or changed upstream)"
-            )
 
     if changed:
         found.write_text(content)
