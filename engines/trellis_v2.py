@@ -158,16 +158,20 @@ class TRELLIS2Engine(Engine):
             # mode. BatchNorm layers were pre-cast to float32 (autocast keeps
             # batch_norm in float32, and weight/input must match).
             with torch.autocast(device_type="cuda", dtype=dtype):
-                result = self.pipeline.run(
+                result, latents = self.pipeline.run(
                     image,
                     preprocess_image=True,
                     pipeline_type="1024_cascade",
+                    return_latent=True,
                 )
             logger.info(f"pipeline.run() done in {time.time() - start:.1f}s")
+            # Unpack res before freeing latents — needed for to_glb(grid_size=res)
+            _, _, res = latents
+            del latents
             mesh = result[0]
             mesh.attrs = mesh.attrs.float()
             n_active = mesh.coords.shape[0] if hasattr(mesh, "coords") else "unknown"
-            logger.info(f"SLAT active voxels: {n_active}")
+            logger.info(f"SLAT active voxels: {n_active}, grid_size={res}")
             logger.info(
                 f"Mesh before simplify: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces"
             )
@@ -199,9 +203,9 @@ class TRELLIS2Engine(Engine):
         vram_used = torch.cuda.memory_allocated() / 1e9
         logger.info(f"VRAM after pipeline offload: {vram_used:.1f}GB allocated")
         logger.info(f"Inference complete in {time.time() - start:.1f}s")
-        return mesh
+        return mesh, res
 
-    def postprocess(self, raw_mesh: Any) -> str:
+    def postprocess(self, infer_output: Any) -> str:
         """Export Trellis2Mesh to GLB using trimesh with per-vertex SLAT colors.
 
         Bypasses o_voxel.postprocess.to_glb() entirely: that function's remesh=False
@@ -210,6 +214,7 @@ class TRELLIS2Engine(Engine):
         runs DC remeshing over a 1024^3 grid which takes >36 minutes.  Direct
         trimesh export with nearest-voxel color sampling takes <5 seconds.
         """
+        raw_mesh, res = infer_output  # noqa: F841  (res reserved for future to_glb())
         output_dir = Path("/app/output/trellis")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")

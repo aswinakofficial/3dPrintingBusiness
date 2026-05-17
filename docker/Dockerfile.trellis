@@ -107,7 +107,7 @@ RUN sed -i \
 # The argument `model_name` appears alone on its line in from_pretrained() so a
 # simple sed on that token is sufficient.
 RUN sed -i \
-  's|    model_name, trust_remote_code=True|    "ZhengPeng7/BiRefNet", trust_remote_code=True|' \
+  's|    model_name, trust_remote_code=True|    "camenduru/RMBG-2.0", trust_remote_code=True|' \
   /opt/trellis2-repo/trellis2/pipelines/rembg/BiRefNet.py
 # BiRefNet returns a bfloat16 tensor under bfloat16 autocast but ToPILImage()
 # only accepts float32/uint8. Cast the prediction to float32 before conversion.
