@@ -226,92 +226,111 @@ class TRELLIS2Engine(Engine):
         return mesh, res
 
     def postprocess(self, infer_output: Any) -> str:
-        """Export Trellis2Mesh to GLB using trimesh with per-vertex SLAT colors.
+        """Export Trellis2Mesh as a watertight GLB using Open3D Poisson reconstruction.
 
-        Bypasses o_voxel.postprocess.to_glb() entirely: that function's remesh=False
-        path destroys the fragmented marching-cubes mesh via
-        remove_small_connected_components(), and remesh=True at resolution=1024
-        runs DC remeshing over a 1024^3 grid which takes >36 minutes.  Direct
-        trimesh export with nearest-voxel color sampling takes <5 seconds.
+        TRELLIS.2's marching-cubes output is non-watertight: the sparse voxel grid
+        produces many disconnected face patches separated by gaps.  The correct fix
+        is o_voxel.postprocess.to_glb(remesh=True) (Dual Contouring), but DC remesh
+        at 1024^3 times out.  Instead we run Poisson surface reconstruction on the
+        full set of marching-cubes vertex positions — they are dense surface samples
+        even when not connected by faces — to produce a watertight, print-ready mesh.
+        Falls back to direct trimesh export if Open3D is unavailable.
         """
-        raw_mesh, res = infer_output  # noqa: F841  (res reserved for future to_glb())
+        raw_mesh, res = infer_output  # noqa: F841
         output_dir = Path("/app/output/trellis")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output_file = output_dir / f"trellis_{timestamp}_raw.glb"
+        output_file = output_dir / f"trellis_{timestamp}_print.glb"
 
-        # Remove isolated vertices (not referenced by any face)
+        # ALL raw_mesh vertices (including isolated ones) are surface samples from
+        # the SLAT marching-cubes — use them as the Poisson point cloud.
+        all_verts = raw_mesh.vertices.cpu().float().numpy().copy()
+        logger.info(f"Raw mesh: {all_verts.shape[0]:,} surface points")
+
+        # Swap Y/Z for GLTF Y-up convention (TRELLIS.2 internal space is Z-up)
+        all_verts[:, 1], all_verts[:, 2] = (
+            all_verts[:, 2].copy(),
+            -all_verts[:, 1].copy(),
+        )
+
+        try:
+            import open3d as o3d
+
+            logger.info(
+                f"Poisson reconstruction (depth=9) on {all_verts.shape[0]:,} points..."
+            )
+            t0 = time.time()
+
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(all_verts)
+            pcd.estimate_normals(
+                search_param=o3d.geometry.KDTreeSearchParamHybrid(
+                    radius=0.02, max_nn=30
+                )
+            )
+            pcd.orient_normals_consistent_tangent_plane(100)
+
+            (
+                mesh_o3d,
+                densities,
+            ) = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+                pcd, depth=9, scale=1.1, linear_fit=False
+            )
+
+            # Remove low-density vertices — Poisson extrapolates slightly outside the
+            # real surface; clipping the bottom 5% by density removes those artifacts.
+            dens = np.asarray(densities)
+            mesh_o3d.remove_vertices_by_mask(dens < np.percentile(dens, 5))
+            mesh_o3d.remove_degenerate_triangles()
+            mesh_o3d.remove_unreferenced_vertices()
+
+            n_v = len(mesh_o3d.vertices)
+            n_f = len(mesh_o3d.triangles)
+            logger.info(
+                f"Poisson mesh: {n_v:,} vertices, {n_f:,} faces ({time.time()-t0:.1f}s)"
+            )
+
+            # Decimate to a count manageable by slicer software
+            target = 300_000
+            if n_f > target:
+                mesh_o3d = mesh_o3d.simplify_quadric_decimation(target)
+                logger.info(f"Decimated to {len(mesh_o3d.triangles):,} faces")
+
+            verts_out = np.asarray(mesh_o3d.vertices, dtype=np.float32)
+            faces_out = np.asarray(mesh_o3d.triangles, dtype=np.int32)
+            mesh_out = trimesh.Trimesh(
+                vertices=verts_out, faces=faces_out, process=False
+            )
+            mesh_out.export(str(output_file))
+            logger.info(
+                f"Exported watertight GLB: {len(mesh_out.vertices):,} v, "
+                f"{len(mesh_out.faces):,} f → {output_file}"
+            )
+            return str(output_file)
+
+        except Exception as exc:
+            logger.warning(
+                f"Poisson reconstruction failed ({exc}); falling back to direct trimesh export"
+            )
+
+        # ── Fallback: direct trimesh export (non-watertight, vertex-color) ──────
+        output_file = output_dir / f"trellis_{timestamp}_raw.glb"
         unique_idx, inverse = torch.unique(
             raw_mesh.faces.reshape(-1), return_inverse=True
         )
-        n_isolated = raw_mesh.vertices.shape[0] - unique_idx.shape[0]
-        if n_isolated > 0:
-            logger.info(
-                f"Removing {n_isolated:,} isolated vertices "
-                f"({raw_mesh.vertices.shape[0]:,} → {unique_idx.shape[0]:,})"
-            )
-        vert_t = raw_mesh.vertices[unique_idx]  # (V, 3) GPU float
+        vert_t = raw_mesh.vertices[unique_idx]
         face_t = inverse.reshape(raw_mesh.faces.shape).to(torch.int64)
         logger.info(
-            f"Mesh for export: {vert_t.shape[0]:,} vertices, {face_t.shape[0]:,} faces"
+            f"Fallback mesh: {vert_t.shape[0]:,} vertices, {face_t.shape[0]:,} faces"
         )
-
-        # Sample per-vertex base color from SLAT attr volume via nearest-voxel lookup.
-        # coords: (K, 3) int voxel indices;  attrs: (K, C) float [0,1].
-        vertex_colors = None
-        try:
-            t0 = time.time()
-            gs = round(1.0 / raw_mesh.voxel_size)  # grid resolution (e.g. 1024)
-            origin = torch.tensor(
-                [-0.5, -0.5, -0.5], dtype=torch.float32, device=vert_t.device
-            )
-            # Vertex world pos → integer voxel coordinate
-            vert_vox = (
-                ((vert_t - origin) / raw_mesh.voxel_size)
-                .floor()
-                .clamp(0, gs - 1)
-                .to(torch.int64)
-            )
-            # Encode 3D coords as scalar keys for binary search
-
-            def _enc(c):
-                return c[:, 0] * gs * gs + c[:, 1] * gs + c[:, 2]
-
-            vox_keys = _enc(raw_mesh.coords.to(torch.int64))
-            vert_keys = _enc(vert_vox)
-
-            sorted_idx = torch.argsort(vox_keys)
-            sorted_keys = vox_keys[sorted_idx]
-            pos = torch.searchsorted(sorted_keys, vert_keys).clamp(
-                0, len(sorted_keys) - 1
-            )
-            hit = sorted_keys[pos] == vert_keys
-
-            base_color_s = raw_mesh.layout.get("base_color", slice(0, 3))
-            colors_f = raw_mesh.attrs[sorted_idx[pos], base_color_s].clone()
-            colors_f[~hit] = 0.5  # gray fallback for unmatched vertices
-            rgb = (colors_f.clamp(0, 1).cpu().float().numpy() * 255).astype(np.uint8)
-            alpha = np.full((rgb.shape[0], 1), 255, dtype=np.uint8)
-            vertex_colors = np.concatenate([rgb, alpha], axis=1)
-            logger.info(f"Vertex color sampling: {time.time() - t0:.2f}s")
-        except Exception as e:
-            logger.warning(f"Vertex color sampling failed ({e}), exporting plain mesh")
-
-        # Convert to numpy — swap Y/Z for GLTF Y-up coordinate convention
-        # (TRELLIS.2 is Z-up internally; matches what to_glb() does)
         verts = vert_t.cpu().float().numpy().copy()
         verts[:, 1], verts[:, 2] = verts[:, 2].copy(), -verts[:, 1].copy()
         faces = face_t.cpu().numpy().astype(np.int32)
-
-        mesh = trimesh.Trimesh(
-            vertices=verts,
-            faces=faces,
-            vertex_colors=vertex_colors,
-            process=False,
-        )
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
         mesh.export(str(output_file))
         logger.info(
-            f"Exported GLB: {len(mesh.vertices):,} vertices, {len(mesh.faces):,} faces → {output_file}"
+            f"Exported GLB (fallback): {len(mesh.vertices):,} v, "
+            f"{len(mesh.faces):,} f → {output_file}"
         )
         return str(output_file)
 
