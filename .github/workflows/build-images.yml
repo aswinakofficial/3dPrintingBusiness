@@ -25,6 +25,7 @@ on:
       - "docker/**"
       - "engines/**"
       - "utils/**"
+      - "scripts/**"
       - "main.py"
       - "config.yaml"
       - "requirements-runtime.txt"
