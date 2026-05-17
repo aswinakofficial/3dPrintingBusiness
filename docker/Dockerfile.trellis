@@ -74,6 +74,23 @@ RUN pip install --no-cache-dir \
 # in any PyPI release. Pin to the commit that introduced it.
 RUN pip install --no-cache-dir \
     "git+https://github.com/huggingface/transformers.git@c9de1097eed992fe205f876415e7a7cfaa06be50"
+# AutoModelForImageSegmentation.from_pretrained() calls model._named_pretrained_submodules
+# on the loaded model. Models like BiRefNet/RMBG-2.0 that are loaded via trust_remote_code=True
+# inherit from nn.Module (not PreTrainedModel) and lack this method. Patch modeling_utils to
+# use getattr with a safe default so these models load without AttributeError.
+RUN python3 -c "
+import transformers.modeling_utils as mu, pathlib
+f = pathlib.Path(mu.__file__)
+content = f.read_text()
+old = 'model._named_pretrained_submodules'
+new = 'getattr(model, \"_named_pretrained_submodules\", lambda: iter([]))'
+if old in content:
+    patched = content.replace(old, new)
+    f.write_text(patched)
+    print(f'Patched {content.count(old)} occurrence(s) in {f}')
+else:
+    print('Pattern not found — check transformers version')
+"
 
 RUN pip install --no-cache-dir \
     git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
