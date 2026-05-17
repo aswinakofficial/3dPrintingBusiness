@@ -25,11 +25,17 @@ def patch_conversion_mapping():
         new = "getattr(model, '_named_pretrained_submodules', [])"
         if old in content:
             tf_path.write_text(content.replace(old, new))
-            print(f"[OK] conversion_mapping: patched _named_pretrained_submodules → {tf_path}")
+            print(
+                f"[OK] conversion_mapping: patched _named_pretrained_submodules → {tf_path}"
+            )
         else:
-            print(f"[SKIP] conversion_mapping: pattern not found (already patched) → {tf_path}")
+            print(
+                f"[SKIP] conversion_mapping: pattern not found (already patched) → {tf_path}"
+            )
     if not found:
-        print("[WARN] transformers/conversion_mapping.py not found under /usr/local/lib")
+        print(
+            "[WARN] transformers/conversion_mapping.py not found under /usr/local/lib"
+        )
 
 
 def patch_trellis2_pipeline():
@@ -44,9 +50,7 @@ def patch_trellis2_pipeline():
        Callers should pass pre-processed RGBA images with real alpha so that
        preprocess_image detects has_alpha=True and skips the rembg call entirely.
     """
-    p = pathlib.Path(
-        "/opt/trellis2-repo/trellis2/pipelines/trellis2_image_to_3d.py"
-    )
+    p = pathlib.Path("/opt/trellis2-repo/trellis2/pipelines/trellis2_image_to_3d.py")
     if not p.exists():
         print(f"[ERROR] not found: {p}", file=sys.stderr)
         sys.exit(1)
@@ -68,8 +72,8 @@ def patch_trellis2_pipeline():
             f"{indent}except Exception as _rembg_err:\n"
             f"{indent}    import warnings\n"
             f"{indent}    warnings.warn(\n"
-            f"{indent}        f\"[TRELLIS2] rembg model load failed ({{_rembg_err}}); \"\n"
-            f"{indent}        \"background removal disabled — pass pre-processed RGBA images\"\n"
+            f'{indent}        f"[TRELLIS2] rembg model load failed ({{_rembg_err}}); "\n'
+            f'{indent}        "background removal disabled — pass pre-processed RGBA images"\n'
             f"{indent}    )\n"
             f"{indent}    pipeline.rembg_model = None"
         )
@@ -95,7 +99,9 @@ def patch_trellis2_pipeline():
             f"{indent2}    output = self.rembg_model(input)"
         )
         content = content[: m2.start()] + replacement2 + content[m2.end() :]
-        print("[OK] trellis2_image_to_3d: None-safe rembg_model call in preprocess_image")
+        print(
+            "[OK] trellis2_image_to_3d: None-safe rembg_model call in preprocess_image"
+        )
         changed = True
     else:
         print(
