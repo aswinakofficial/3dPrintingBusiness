@@ -9,7 +9,9 @@ import time
 from pathlib import Path
 from typing import Any, List, Union
 
+import numpy as np
 import torch
+import trimesh
 from PIL import Image
 
 from engines.base_engine import Engine, EngineConfig
@@ -200,18 +202,20 @@ class TRELLIS2Engine(Engine):
         return mesh
 
     def postprocess(self, raw_mesh: Any) -> str:
-        """Export Trellis2Mesh to GLB via o_voxel.postprocess.to_glb."""
-        import o_voxel
+        """Export Trellis2Mesh to GLB using trimesh with per-vertex SLAT colors.
 
+        Bypasses o_voxel.postprocess.to_glb() entirely: that function's remesh=False
+        path destroys the fragmented marching-cubes mesh via
+        remove_small_connected_components(), and remesh=True at resolution=1024
+        runs DC remeshing over a 1024^3 grid which takes >36 minutes.  Direct
+        trimesh export with nearest-voxel color sampling takes <5 seconds.
+        """
         output_dir = Path("/app/output/trellis")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = output_dir / f"trellis_{timestamp}_raw.glb"
 
-        # The raw TRELLIS.2 mesh has ~1 vertex per active SLAT voxel but far fewer
-        # faces — most vertices are isolated (no face references them).  Isolated
-        # vertices render as dots in every viewer and also crash o_voxel's remesh.
-        # Remove them and remap face indices before export.
+        # Remove isolated vertices (not referenced by any face)
         unique_idx, inverse = torch.unique(
             raw_mesh.faces.reshape(-1), return_inverse=True
         )
@@ -221,44 +225,69 @@ class TRELLIS2Engine(Engine):
                 f"Removing {n_isolated:,} isolated vertices "
                 f"({raw_mesh.vertices.shape[0]:,} → {unique_idx.shape[0]:,})"
             )
-            vertices = raw_mesh.vertices[unique_idx]
-            faces = inverse.reshape(raw_mesh.faces.shape).to(torch.int32)
-        else:
-            vertices = raw_mesh.vertices
-            faces = raw_mesh.faces
+        vert_t = raw_mesh.vertices[unique_idx]  # (V, 3) GPU float
+        face_t = inverse.reshape(raw_mesh.faces.shape).to(torch.int64)
+        logger.info(
+            f"Mesh for export: {vert_t.shape[0]:,} vertices, {face_t.shape[0]:,} faces"
+        )
 
-        logger.info(
-            f"Exporting GLB via o_voxel (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)..."
-        )
-        t_glb = time.time()
-        logger.info(
-            f"Mesh for export: {vertices.shape[0]:,} vertices, {faces.shape[0]:,} faces"
-        )
-        # remesh=True: narrow-band dual contouring rebuilds topology from scratch,
-        # avoiding remove_small_connected_components() which destroys the
-        # fragmented marching-cubes mesh that TRELLIS.2 outputs.
-        # remesh_project=0: skip projection back to original surface (faster,
-        # matches official app.py defaults).
-        glb = o_voxel.postprocess.to_glb(
-            vertices=vertices,
+        # Sample per-vertex base color from SLAT attr volume via nearest-voxel lookup.
+        # coords: (K, 3) int voxel indices;  attrs: (K, C) float [0,1].
+        vertex_colors = None
+        try:
+            t0 = time.time()
+            gs = round(1.0 / raw_mesh.voxel_size)  # grid resolution (e.g. 1024)
+            origin = torch.tensor(
+                [-0.5, -0.5, -0.5], dtype=torch.float32, device=vert_t.device
+            )
+            # Vertex world pos → integer voxel coordinate
+            vert_vox = (
+                ((vert_t - origin) / raw_mesh.voxel_size)
+                .floor()
+                .clamp(0, gs - 1)
+                .to(torch.int64)
+            )
+            # Encode 3D coords as scalar keys for binary search
+
+            def _enc(c):
+                return c[:, 0] * gs * gs + c[:, 1] * gs + c[:, 2]
+
+            vox_keys = _enc(raw_mesh.coords.to(torch.int64))
+            vert_keys = _enc(vert_vox)
+
+            sorted_idx = torch.argsort(vox_keys)
+            sorted_keys = vox_keys[sorted_idx]
+            pos = torch.searchsorted(sorted_keys, vert_keys).clamp(
+                0, len(sorted_keys) - 1
+            )
+            hit = sorted_keys[pos] == vert_keys
+
+            base_color_s = raw_mesh.layout.get("base_color", slice(0, 3))
+            colors_f = raw_mesh.attrs[sorted_idx[pos], base_color_s].clone()
+            colors_f[~hit] = 0.5  # gray fallback for unmatched vertices
+            rgb = (colors_f.clamp(0, 1).cpu().float().numpy() * 255).astype(np.uint8)
+            alpha = np.full((rgb.shape[0], 1), 255, dtype=np.uint8)
+            vertex_colors = np.concatenate([rgb, alpha], axis=1)
+            logger.info(f"Vertex color sampling: {time.time() - t0:.2f}s")
+        except Exception as e:
+            logger.warning(f"Vertex color sampling failed ({e}), exporting plain mesh")
+
+        # Convert to numpy — swap Y/Z for GLTF Y-up coordinate convention
+        # (TRELLIS.2 is Z-up internally; matches what to_glb() does)
+        verts = vert_t.cpu().float().numpy().copy()
+        verts[:, 1], verts[:, 2] = verts[:, 2].copy(), -verts[:, 1].copy()
+        faces = face_t.cpu().numpy().astype(np.int32)
+
+        mesh = trimesh.Trimesh(
+            vertices=verts,
             faces=faces,
-            attr_volume=raw_mesh.attrs,
-            coords=raw_mesh.coords,
-            attr_layout=raw_mesh.layout,
-            voxel_size=raw_mesh.voxel_size,
-            aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-            decimation_target=500000,
-            texture_size=2048,
-            remesh=True,
-            remesh_band=1,
-            remesh_project=0,
-            verbose=True,
+            vertex_colors=vertex_colors,
+            process=False,
         )
+        mesh.export(str(output_file))
         logger.info(
-            f"to_glb() done in {time.time() - t_glb:.1f}s (VRAM: {torch.cuda.memory_allocated()/1e9:.1f}GB)"
+            f"Exported GLB: {len(mesh.vertices):,} vertices, {len(mesh.faces):,} faces → {output_file}"
         )
-        glb.export(str(output_file), extension_webp=True)
-        logger.info(f"Exported TRELLIS.2 output to {output_file}")
         return str(output_file)
 
     def get_engine_info(self) -> dict:
