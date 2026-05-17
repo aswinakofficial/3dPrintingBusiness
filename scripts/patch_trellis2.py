@@ -158,31 +158,47 @@ def patch_ovoxel_postprocess():
     else:
         print("[SKIP] o_voxel resolution cap: already patched or pattern not found")
 
-    # ── Patch B: post-remesh cleanup ─────────────────────────────────────────
-    # The remesh branch's simplify call is uniquely identified by its verbose print.
-    old_b = (
-        "        mesh.simplify(decimation_target, verbose=verbose)\n"
-        "        if verbose:\n"
-        '            print(f"After simplifying: {mesh.num_vertices} vertices, {mesh.num_faces} faces")'
-    )
-    new_b = (
-        "        mesh.simplify(decimation_target, verbose=verbose)\n"
-        "        if verbose:\n"
-        '            print(f"After simplifying: {mesh.num_vertices} vertices, {mesh.num_faces} faces")\n'
-        "        mesh.remove_duplicate_faces()\n"
-        "        mesh.repair_non_manifold_edges()\n"
-        "        mesh.remove_small_connected_components(1e-5)\n"
-        "        mesh.fill_holes(max_hole_perimeter=3e-2)\n"
-        "        mesh.unify_face_orientations()"
-    )
-    if old_b in content and "unify_face_orientations" not in content:
-        content = content.replace(old_b, new_b, 1)
-        print("[OK] o_voxel/postprocess.py: added post-remesh cleanup")
-        changed = True
+    # ── Patch B: post-remesh cleanup (regex for robust indentation match) ────
+    # Sentinel identifies whether this patch was already applied.
+    _b_sentinel = "remove_small_connected_components(0.005)"
+    if _b_sentinel in content:
+        print("[SKIP] o_voxel post-remesh cleanup: already patched")
     else:
-        print(
-            "[SKIP] o_voxel post-remesh cleanup: already patched or pattern not found"
+        # The remesh branch has a unique verbose print after its simplify call.
+        # Use regex to tolerate variation in indentation depth.
+        m_b = re.search(
+            r"( {4,})(mesh\.simplify\(decimation_target,[ \t]*verbose=verbose\))\n"
+            r"( +if verbose:\n"
+            r' +print\(f"After simplifying:)',
+            content,
         )
+        if m_b:
+            indent = m_b.group(1)
+            region_end = (
+                content.index("\n", content.index("After simplifying:", m_b.start()))
+                + 1
+            )
+            replacement = (
+                f"{indent}mesh.simplify(decimation_target, verbose=verbose)\n"
+                f"{indent}if verbose:\n"
+                f'{indent}    print(f"After simplifying: {{mesh.num_vertices}} vertices,'
+                f' {{mesh.num_faces}} faces")\n'
+                f"{indent}mesh.remove_duplicate_faces()\n"
+                f"{indent}mesh.repair_non_manifold_edges()\n"
+                f"{indent}mesh.remove_small_connected_components(0.005)\n"
+                f"{indent}mesh.fill_holes(max_hole_perimeter=5e-2)\n"
+                f"{indent}mesh.unify_face_orientations()"
+            )
+            content = content[: m_b.start()] + replacement + content[region_end:]
+            print(
+                "[OK] o_voxel/postprocess.py: added post-remesh cleanup (threshold=0.005)"
+            )
+            changed = True
+        else:
+            print(
+                "[SKIP] o_voxel post-remesh cleanup: pattern not found "
+                "(already patched or changed upstream)"
+            )
 
     if changed:
         found.write_text(content)
