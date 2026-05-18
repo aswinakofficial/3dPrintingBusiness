@@ -265,44 +265,6 @@ class TRELLIS2Engine(Engine):
             )
             glb.export(str(output_file))
             logger.info(f"to_glb() done in {time.time() - t0:.1f}s → {output_file}")
-
-            # Safety net: remove fragments that are <0.5% of total face count.
-            # These appear as floating dots in viewers. o_voxel's post-remesh cleanup
-            # (Patch B in patch_trellis2.py) should handle this at the source, but we
-            # apply a trimesh pass here in case the patch didn't match the installed file.
-            try:
-                _scene = trimesh.load(str(output_file), force="scene")
-                _geoms = (
-                    list(_scene.geometry.values())
-                    if isinstance(_scene, trimesh.Scene)
-                    else [_scene]
-                )
-                if _geoms:
-                    _tm = _geoms[0]
-                    _comps = _tm.split(only_watertight=False)
-                    if len(_comps) > 1:
-                        _total = sum(len(c.faces) for c in _comps)
-                        _keep = [c for c in _comps if len(c.faces) / _total > 0.005]
-                        logger.info(
-                            f"Fragment cleanup: {len(_comps)} components, "
-                            f"keeping {len(_keep)} (>0.5% of {_total:,} faces)"
-                        )
-                        if len(_keep) < len(_comps):
-                            _clean = trimesh.util.concatenate(_keep)
-                            _clean.export(str(output_file))
-                            logger.info(
-                                f"Re-exported after cleanup: "
-                                f"{len(_clean.vertices):,} v, {len(_clean.faces):,} f"
-                            )
-                    else:
-                        logger.info(
-                            f"Single-component mesh ({len(_comps[0].faces):,} faces)"
-                        )
-            except Exception as _ce:
-                logger.warning(
-                    f"Fragment cleanup skipped ({_ce}); keeping original GLB"
-                )
-
             return str(output_file)
 
         except Exception as exc:
