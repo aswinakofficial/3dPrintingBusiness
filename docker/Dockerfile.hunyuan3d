@@ -112,8 +112,12 @@ COPY scripts/patch_hunyuan3d.py /tmp/patch_hunyuan3d.py
 RUN python3 /tmp/patch_hunyuan3d.py
 
 # Our app's runtime dependencies
+# torch/torchvision are already pinned to cu121 versions above — skip them here
+# to avoid re-downloading 2.5 GB and exhausting the runner disk.
 COPY requirements-runtime.txt .
-RUN pip install --no-cache-dir -r requirements-runtime.txt
+RUN grep -vE "^torch(vision)?[=<>!]" requirements-runtime.txt \
+    > /tmp/req-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/req-no-torch.txt
 
 # Copy app code last (best layer cache reuse on iteration)
 COPY config.yaml .
