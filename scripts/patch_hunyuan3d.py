@@ -23,7 +23,9 @@ def patch_mesh_utils():
         return
     content = target.read_text()
     if "import bpy" not in content and "from bpy" not in content:
-        print("[SKIP] mesh_utils: no bpy import found (already patched or changed upstream)")
+        print(
+            "[SKIP] mesh_utils: no bpy import found (already patched or changed upstream)"
+        )
         return
     target.write_text(_MESH_UTILS_PATCHED)
     print(f"[OK] mesh_utils.py: replaced bpy implementation with trimesh → {target}")

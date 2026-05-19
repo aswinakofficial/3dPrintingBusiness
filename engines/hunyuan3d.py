@@ -28,9 +28,27 @@ _VIEW_LABELS = ["front", "right", "back", "left", "front_left", "front_right"]
 
 # Texture quality tiers — tried in order, stepped down on CUDA OOM
 _PAINT_TIERS = [
-    {"views": 8, "resolution": 512, "render_size": 1024, "texture_size": 1024, "label": "high"},
-    {"views": 6, "resolution": 512, "render_size": 1024, "texture_size": 1024, "label": "med"},
-    {"views": 4, "resolution": 512, "render_size": 512,  "texture_size": 1024, "label": "low"},
+    {
+        "views": 8,
+        "resolution": 512,
+        "render_size": 1024,
+        "texture_size": 1024,
+        "label": "high",
+    },
+    {
+        "views": 6,
+        "resolution": 512,
+        "render_size": 1024,
+        "texture_size": 1024,
+        "label": "med",
+    },
+    {
+        "views": 4,
+        "resolution": 512,
+        "render_size": 512,
+        "texture_size": 1024,
+        "label": "low",
+    },
 ]
 
 
@@ -62,7 +80,9 @@ class Hunyuan3DEngine(Engine):
         logger.info(f"GPU memory OK: {total_gb:.1f}GB")
 
         try:
-            from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline  # noqa: F401
+            from hy3dshape.pipelines import (
+                Hunyuan3DDiTFlowMatchingPipeline,
+            )  # noqa: F401
         except ImportError as exc:
             raise RuntimeError(f"hy3dshape not installed in container: {exc}")
 
@@ -197,7 +217,12 @@ class Hunyuan3DEngine(Engine):
         return str(fallback_glb)
 
     def _run_texture_with_fallback(
-        self, obj_path: Path, img_path: Path, tmp_dir: Path, timestamp: str, output_dir: Path
+        self,
+        obj_path: Path,
+        img_path: Path,
+        tmp_dir: Path,
+        timestamp: str,
+        output_dir: Path,
     ) -> str | None:
         if str(_SPACE_DIR) not in sys.path:
             sys.path.insert(0, str(_SPACE_DIR))
@@ -245,7 +270,9 @@ class Hunyuan3DEngine(Engine):
                         f"(tier={label}) → {out_glb}"
                     )
                     return str(out_glb)
-                logger.warning(f"Texture tier={label}: GLB not found at {candidate_glb}")
+                logger.warning(
+                    f"Texture tier={label}: GLB not found at {candidate_glb}"
+                )
 
             except Exception as exc:
                 oom = (
