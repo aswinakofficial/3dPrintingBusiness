@@ -74,6 +74,8 @@ docker/*
 !docker/Dockerfile.meshroom
 !docker/entrypoint-trellis.sh
 !docker/entrypoint-meshroom.sh
+!docker/entrypoint-hunyuan3d.sh
+!docker/Dockerfile.hunyuan3d
 !docker/shared/
 !docker/shared/Dockerfile.base
 docker-compose*
