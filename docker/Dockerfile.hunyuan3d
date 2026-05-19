@@ -68,9 +68,10 @@ RUN pip install --no-cache-dir xformers \
 # Clone Hunyuan3D-2.1 HuggingFace Space via git-lfs.
 # This is the canonical source: it includes hy3dpaint/, cfgs/, and the
 # RealESRGAN_x4plus.pth checkpoint that the texture pipeline requires.
-RUN GIT_LFS_SKIP_SMUDGE=0 git clone \
+RUN GIT_LFS_SKIP_SMUDGE=0 git clone --depth 1 \
     https://huggingface.co/spaces/tencent/Hunyuan3D-2.1 \
-    /opt/hunyuan3d-space
+    /opt/hunyuan3d-space && \
+    rm -rf /opt/hunyuan3d-space/.git
 
 # Validate RealESRGAN checkpoint is the real file (not an LFS pointer stub ~130 bytes)
 RUN test $(stat -c%s /opt/hunyuan3d-space/hy3dpaint/ckpt/RealESRGAN_x4plus.pth) -gt 1000000 \
