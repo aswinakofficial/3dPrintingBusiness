@@ -1,7 +1,10 @@
-"""Hunyuan3D-2 Engine — multi-view image-to-3D from Tencent."""
+"""Hunyuan3D-2 Engine — single and multi-view image-to-3D with PBR textures."""
 
 import gc
 import os
+import shutil
+import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, List, Union
@@ -17,38 +20,59 @@ from utils.pre_processor import ImagePreprocessor, ImageValidator
 
 logger = get_logger()
 
-# Ordered view labels: front is always first (used as texture reference image).
-# Additional views are assigned in clockwise order around the subject.
+# HuggingFace Space clone location (set in Dockerfile)
+_SPACE_DIR = Path("/opt/hunyuan3d-space")
+
+# View labels for multi-view input — first is always "front" (texture reference)
 _VIEW_LABELS = ["front", "right", "back", "left", "front_left", "front_right"]
+
+# Texture quality tiers — tried in order, stepped down on CUDA OOM
+_PAINT_TIERS = [
+    {"views": 8, "resolution": 512, "render_size": 1024, "texture_size": 1024, "label": "high"},
+    {"views": 6, "resolution": 512, "render_size": 1024, "texture_size": 1024, "label": "med"},
+    {"views": 4, "resolution": 512, "render_size": 512,  "texture_size": 1024, "label": "low"},
+]
 
 
 class Hunyuan3DEngine(Engine):
-    """Hunyuan3D-2 multi-view image-to-3D engine (shape + PBR texture)."""
+    """Hunyuan3D-2 image-to-3D.
 
-    SHAPEGEN_MODEL_ID = "tencent/Hunyuan3D-2mv"
-    TEXGEN_MODEL_ID = "tencent/Hunyuan3D-2"
+    1 image  → Hunyuan3D-2.1 (tencent/Hunyuan3D-2.1, single-view DiT)
+    2–6 imgs → Hunyuan3D-2mv (tencent/Hunyuan3D-2mv, multi-view DiT)
+
+    Texture: Hunyuan3DPaint pipeline from cloned HF Space (file-path based API).
+    """
+
+    SINGLE_MODEL_ID = "tencent/Hunyuan3D-2.1"
+    SINGLE_SUBFOLDER = "hunyuan3d-dit-v2-1"
+    MULTI_MODEL_ID = "tencent/Hunyuan3D-2mv"
+    MULTI_SUBFOLDER = "hunyuan3d-dit-v2-mv"
 
     def __init__(self, config: EngineConfig):
         super().__init__(config)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.shapegen = None
-        self.texgen = None
 
     def validate_prerequisites(self) -> bool:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA not available — Hunyuan3D-2 requires GPU")
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         if total_gb < 14:
-            raise RuntimeError(
-                f"GPU has only {total_gb:.1f}GB; Hunyuan3D-2 needs 14GB+ VRAM"
-            )
+            raise RuntimeError(f"GPU has {total_gb:.1f}GB; need 14GB+ for Hunyuan3D-2")
         logger.info(f"GPU memory OK: {total_gb:.1f}GB")
+
         try:
-            from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline  # noqa: F401
-            from hy3dgen.texgen import Hunyuan3DPaintPipeline  # noqa: F401
+            from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline  # noqa: F401
         except ImportError as exc:
-            raise RuntimeError(f"hy3dgen not installed in container: {exc}")
-        logger.info("hy3dgen imports OK")
+            raise RuntimeError(f"hy3dshape not installed in container: {exc}")
+
+        realesr_ckpt = _SPACE_DIR / "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
+        if not realesr_ckpt.exists():
+            raise RuntimeError(
+                f"RealESRGAN checkpoint missing: {realesr_ckpt} — "
+                "Space clone incomplete or git-lfs pull failed"
+            )
+        logger.info("hy3dshape imports OK, RealESRGAN checkpoint present")
         return True
 
     def preprocess(self, image_paths: Union[str, List[str]]) -> List[Image.Image]:
@@ -66,14 +90,15 @@ class Hunyuan3DEngine(Engine):
 
         images = []
         for path in validated:
-            img = ImagePreprocessor.load_image(path)
+            img = ImagePreprocessor.load_image(path).convert("RGBA")
             try:
                 import rembg
 
-                session = rembg.new_session("u2net")
+                session = rembg.new_session("birefnet-general")
                 img = rembg.remove(img, session=session)
                 logger.info(
-                    f"Background removed: {Path(path).name} → {img.mode} {img.size}"
+                    f"Background removed (birefnet-general): {Path(path).name} "
+                    f"→ {img.mode} {img.size}"
                 )
             except Exception as e:
                 logger.warning(f"Background removal failed ({e}), using original")
@@ -83,74 +108,164 @@ class Hunyuan3DEngine(Engine):
         return images
 
     def infer(self, images: List[Image.Image]) -> Any:
-        """Run shape generation then texture generation. Returns a trimesh.Trimesh."""
+        """Shape generation. Returns (mesh, tmp_dir, front_img_path)."""
         if not images:
             raise ValueError("No preprocessed images supplied")
 
-        from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
-        from hy3dgen.texgen import Hunyuan3DPaintPipeline
+        from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
 
         n = len(images)
-        view_dict = {_VIEW_LABELS[i]: images[i] for i in range(n)}
-        logger.info(f"View mapping: {list(view_dict.keys())}")
+        is_multi = n > 1
+        model_id = self.MULTI_MODEL_ID if is_multi else self.SINGLE_MODEL_ID
+        subfolder = self.MULTI_SUBFOLDER if is_multi else self.SINGLE_SUBFOLDER
 
-        # ── Shape generation ──────────────────────────────────────────────────
-        logger.info(f"Loading shape pipeline: {self.SHAPEGEN_MODEL_ID}")
+        logger.info(
+            f"Loading shape pipeline: {model_id}/{subfolder} ({n} input image(s))"
+        )
         self.shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-            self.SHAPEGEN_MODEL_ID, subfolder="hunyuan3d-dit-v2-mv"
-        ).to(self.device)
+            model_id,
+            subfolder=subfolder,
+            use_safetensors=False,
+            device=str(self.device),
+        )
+
+        if is_multi:
+            view_dict = {_VIEW_LABELS[i]: images[i] for i in range(n)}
+            logger.info(f"Multi-view shape gen: {list(view_dict.keys())}")
+            shape_input = {"image": view_dict}
+        else:
+            logger.info("Single-view shape gen")
+            shape_input = {"image": images[0]}
 
         t0 = time.time()
-        logger.info("Running shape generation (num_inference_steps=30, octree_res=380)...")
-        sm = torch.cuda.get_device_capability()
-        dtype = torch.bfloat16 if sm[0] >= 8 else torch.float16
-        logger.info(f"GPU sm_{sm[0]}{sm[1]}: using {dtype} autocast")
-        with torch.autocast(device_type="cuda", dtype=dtype):
-            mesh = self.shapegen(
-                image=view_dict,
-                num_inference_steps=30,
-                octree_resolution=380,
-                output_type="trimesh",
-            )[0]
+        logger.info(
+            "Running shape generation (num_inference_steps=50, octree_resolution=384)..."
+        )
+        mesh = self.shapegen(
+            **shape_input,
+            num_inference_steps=50,
+            octree_resolution=384,
+        )[0]
         logger.info(
             f"Shape done in {time.time()-t0:.1f}s — "
             f"{len(mesh.vertices):,}v {len(mesh.faces):,}f"
         )
 
-        # Offload shape pipeline before texture pass to free VRAM
+        # Offload shape pipeline to free VRAM for texture generation
         self.shapegen.to("cpu")
         gc.collect()
         torch.cuda.empty_cache()
         logger.info(
-            f"VRAM after shapegen offload: {torch.cuda.memory_allocated()/1e9:.1f}GB allocated"
+            f"VRAM after shape offload: {torch.cuda.memory_allocated()/1e9:.1f}GB allocated"
         )
 
-        # ── Texture generation ────────────────────────────────────────────────
-        # Use the front image (first supplied) as the texture reference.
-        front_image = images[0]
-        logger.info(f"Loading texture pipeline: {self.TEXGEN_MODEL_ID}")
-        self.texgen = Hunyuan3DPaintPipeline.from_pretrained(
-            self.TEXGEN_MODEL_ID
-        ).to(self.device)
-        t1 = time.time()
-        logger.info("Running texture generation...")
-        mesh = self.texgen(mesh, image=front_image)
-        logger.info(f"Texture done in {time.time()-t1:.1f}s")
+        # Save front (first) image for texture reference
+        tmp_dir = Path(tempfile.mkdtemp())
+        front_img_path = tmp_dir / "front.png"
+        images[0].save(str(front_img_path))
 
-        return mesh
+        return mesh, tmp_dir, front_img_path
 
-    def postprocess(self, mesh: Any) -> str:
+    def postprocess(self, infer_output: Any) -> str:
+        """Texture generation then GLB export. Falls back to untextured GLB on failure."""
+        mesh, tmp_dir, front_img_path = infer_output
         output_dir = Path("/app/output/hunyuan3d")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output_file = output_dir / f"hunyuan3d_{timestamp}.glb"
-        mesh.export(str(output_file))
+
+        # Export shape to OBJ — paint pipeline is file-path based, not trimesh-based
+        obj_path = tmp_dir / "shape.obj"
+        mesh.export(str(obj_path))
         logger.info(
-            f"Exported GLB: {len(mesh.vertices):,}v {len(mesh.faces):,}f → {output_file}"
+            f"Shape OBJ: {len(mesh.vertices):,}v {len(mesh.faces):,}f → {obj_path}"
         )
-        return str(output_file)
+
+        textured_glb = self._run_texture_with_fallback(
+            obj_path, front_img_path, tmp_dir, timestamp, output_dir
+        )
+        if textured_glb:
+            return textured_glb
+
+        # Final fallback: untextured GLB
+        logger.warning("Texture pipeline failed entirely; exporting untextured GLB")
+        fallback_glb = output_dir / f"hunyuan3d_{timestamp}_raw.glb"
+        mesh.export(str(fallback_glb))
+        logger.info(
+            f"Exported untextured GLB: {len(mesh.vertices):,}v "
+            f"{len(mesh.faces):,}f → {fallback_glb}"
+        )
+        return str(fallback_glb)
+
+    def _run_texture_with_fallback(
+        self, obj_path: Path, img_path: Path, tmp_dir: Path, timestamp: str, output_dir: Path
+    ) -> str | None:
+        if str(_SPACE_DIR) not in sys.path:
+            sys.path.insert(0, str(_SPACE_DIR))
+
+        out_glb = output_dir / f"hunyuan3d_{timestamp}.glb"
+
+        for i, tier in enumerate(_PAINT_TIERS):
+            label = tier["label"]
+            try:
+                from textureGenPipeline import (  # type: ignore[import]
+                    Hunyuan3DPaintConfig,
+                    Hunyuan3DPaintPipeline,
+                )
+
+                conf = Hunyuan3DPaintConfig(tier["views"], tier["resolution"])
+                conf.realesrgan_ckpt_path = str(
+                    _SPACE_DIR / "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
+                )
+                conf.multiview_cfg_path = str(
+                    _SPACE_DIR / "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
+                )
+                conf.custom_pipeline = str(_SPACE_DIR / "hy3dpaint/hunyuanpaintpbr")
+                conf.render_size = tier["render_size"]
+                conf.texture_size = tier["texture_size"]
+                paint = Hunyuan3DPaintPipeline(conf)
+
+                out_obj = tmp_dir / f"textured_{label}.obj"
+                t0 = time.time()
+                logger.info(
+                    f"Texture tier={label}: views={tier['views']} "
+                    f"res={tier['resolution']} tex_size={tier['texture_size']}"
+                )
+                paint(
+                    mesh_path=str(obj_path),
+                    image_path=str(img_path),
+                    output_mesh_path=str(out_obj),
+                    save_glb=True,
+                )
+                # Pipeline writes <name>.glb alongside the OBJ
+                candidate_glb = out_obj.with_suffix(".glb")
+                if candidate_glb.exists():
+                    shutil.move(str(candidate_glb), str(out_glb))
+                    logger.info(
+                        f"Texture done in {time.time()-t0:.1f}s "
+                        f"(tier={label}) → {out_glb}"
+                    )
+                    return str(out_glb)
+                logger.warning(f"Texture tier={label}: GLB not found at {candidate_glb}")
+
+            except Exception as exc:
+                oom = (
+                    "out of memory" in str(exc).lower()
+                    or "OutOfMemoryError" in type(exc).__name__
+                )
+                gc.collect()
+                torch.cuda.empty_cache()
+                if oom and i < len(_PAINT_TIERS) - 1:
+                    logger.warning(
+                        f"Texture OOM at tier={label}, stepping down to "
+                        f"tier={_PAINT_TIERS[i+1]['label']}"
+                    )
+                    continue
+                logger.warning(f"Texture failed at tier={label} ({exc})")
+                return None
+
+        return None
 
     def get_engine_info(self) -> dict:
         info = super().get_engine_info()
-        info["model_id"] = self.SHAPEGEN_MODEL_ID
+        info["model_id"] = f"{self.SINGLE_MODEL_ID} / {self.MULTI_MODEL_ID}"
         return info
