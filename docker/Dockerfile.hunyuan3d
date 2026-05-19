@@ -1,0 +1,94 @@
+# Hunyuan3D-2 Engine Dockerfile
+# Tencent's multi-view image-to-3D model with PBR texture generation.
+# Requires devel base for nvcc (two custom CUDA extensions compiled at build time).
+
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+LABEL maintainer="3D Figurine Lab"
+LABEL description="Hunyuan3D-2 Multi-View 3D Generation Engine"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TZ=UTC
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+# T4=7.5, A100=8.0, A10=8.6, H100=9.0
+ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;9.0"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libjpeg-dev \
+    ffmpeg \
+    imagemagick \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+WORKDIR /app
+
+# PyTorch with CUDA 12.4 (matches host CUDA major version)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir \
+    torch==2.6.0 torchvision==0.21.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# xformers for efficient attention
+RUN pip install --no-cache-dir xformers \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Clone Hunyuan3D-2 and install its Python package
+RUN git clone https://github.com/Tencent/Hunyuan3D-2.git /opt/hunyuan3d-repo
+
+# Install Hunyuan3D-2 Python requirements first (pinned versions from the project)
+RUN pip install --no-cache-dir -r /opt/hunyuan3d-repo/requirements.txt
+
+# Install hy3dgen as an editable package
+RUN cd /opt/hunyuan3d-repo && pip install --no-cache-dir -e . --no-build-isolation
+
+# Compile custom CUDA extension: rasterizer (needed by texture pipeline)
+RUN cd /opt/hunyuan3d-repo/hy3dgen/texgen/custom_rasterizer && \
+    python3 setup.py install
+
+# Compile custom CUDA extension: differentiable renderer (needed by texture pipeline)
+RUN cd /opt/hunyuan3d-repo/hy3dgen/texgen/differentiable_renderer && \
+    python3 setup.py install
+
+# Make hy3dgen importable from anywhere
+ENV PYTHONPATH=/opt/hunyuan3d-repo:${PYTHONPATH}
+
+# Our app's runtime dependencies
+COPY requirements-runtime.txt .
+RUN pip install --no-cache-dir -r requirements-runtime.txt
+
+# Copy app code last (best cache reuse)
+COPY config.yaml .
+COPY main.py .
+COPY engines/ ./engines/
+COPY utils/ ./utils/
+COPY scripts/ ./scripts/
+COPY docker/entrypoint-hunyuan3d.sh /app/entrypoint.sh
+
+RUN mkdir -p /app/input /app/output /app/logs && chmod +x /app/entrypoint.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import torch; assert torch.cuda.is_available()" || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python3", "main.py", "--help"]

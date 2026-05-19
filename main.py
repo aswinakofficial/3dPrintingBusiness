@@ -267,6 +267,15 @@ class Pipeline:
                         "Tip: use --generate-views to synthesise the remaining views automatically."
                     )
                 logger.info(f"✓ Meshroom: {len(validated_paths)} images (10-50 range)")
+        elif self.engine_name == "hunyuan3d":
+            if len(validated_paths) > 6:
+                raise ValueError(
+                    f"Hunyuan3D-2 supports max 6 images, got {len(validated_paths)}"
+                )
+            logger.info(
+                f"✓ Hunyuan3D-2: {len(validated_paths)} image(s) "
+                "(1–6 views, assigned front→right→back→left order)"
+            )
 
         return validated_paths
 
@@ -282,9 +291,10 @@ class Pipeline:
         """
         logger.info(f"Loading engine: {self.engine_name}")
 
-        engine_config = EngineConfig(
-            max_images=4 if self.engine_name == "trellis" else 50,
+        max_images = {"trellis": 4, "meshroom": 50, "hunyuan3d": 6}.get(
+            self.engine_name, 4
         )
+        engine_config = EngineConfig(max_images=max_images)
 
         engine = load_engine(self.engine_name, engine_config)
 

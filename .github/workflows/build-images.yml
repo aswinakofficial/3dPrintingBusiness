@@ -16,9 +16,9 @@ on:
       images:
         description: "Which images to build"
         required: false
-        default: "both"
+        default: "all"
         type: choice
-        options: [both, trellis, meshroom]
+        options: [all, trellis, meshroom, hunyuan3d]
   push:
     branches: [main]
     paths:
@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   trellis:
-    if: ${{ github.event_name == 'push' || inputs.images == 'both' || inputs.images == 'trellis' }}
+    if: ${{ github.event_name == 'push' || inputs.images == 'all' || inputs.images == 'trellis' }}
     name: build trellis
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -77,7 +77,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-trellis:buildcache,mode=max
 
   meshroom:
-    if: ${{ github.event_name == 'push' || inputs.images == 'both' || inputs.images == 'meshroom' }}
+    if: ${{ github.event_name == 'push' || inputs.images == 'all' || inputs.images == 'meshroom' }}
     name: build meshroom
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -110,3 +110,38 @@ jobs:
           tags: ${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-meshroom:latest
           cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-meshroom:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-meshroom:buildcache,mode=max
+
+  hunyuan3d:
+    if: ${{ github.event_name == 'push' || inputs.images == 'all' || inputs.images == 'hunyuan3d' }}
+    name: build hunyuan3d
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          sudo apt-get -qq clean
+          docker system prune -a -f
+          df -h /
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name "$REGISTRY_NAME"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Hunyuan3D image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.hunyuan3d
+          push: true
+          tags: ${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-hunyuan3d:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-hunyuan3d:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY_NAME }}.azurecr.io/3dfigurine-hunyuan3d:buildcache,mode=max

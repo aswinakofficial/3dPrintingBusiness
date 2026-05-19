@@ -23,6 +23,13 @@ engines:
     use_gpu: true
     mvs_step_enabled: true
 
+  hunyuan3d:
+    enabled: true
+    docker_image: 3dfigurine-hunyuan3d:latest
+    resolution: 380
+    max_images: 6
+    model_id: tencent/Hunyuan3D-2mv
+
 post_processing:
   export_stl: true
   auto_repair: true
