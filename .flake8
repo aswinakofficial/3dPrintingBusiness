@@ -4,4 +4,5 @@ extend-ignore = E203,W503,E501
 exclude = venv,__pycache__,.git,*.egg-info
 per-file-ignores =
     engines/trellis_v2.py: E402
+    engines/hunyuan3d.py: E402
     tests/test_trellis_engine.py: E402

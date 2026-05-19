@@ -80,9 +80,7 @@ class Hunyuan3DEngine(Engine):
         logger.info(f"GPU memory OK: {total_gb:.1f}GB")
 
         try:
-            from hy3dshape.pipelines import (
-                Hunyuan3DDiTFlowMatchingPipeline,
-            )  # noqa: F401
+            import hy3dshape.pipelines  # noqa: F401
         except ImportError as exc:
             raise RuntimeError(f"hy3dshape not installed in container: {exc}")
 
