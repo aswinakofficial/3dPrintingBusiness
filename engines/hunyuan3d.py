@@ -76,8 +76,9 @@ logger = get_logger()
 # HuggingFace Space clone location (set in Dockerfile)
 _SPACE_DIR = Path("/opt/hunyuan3d-space")
 
-# View labels for multi-view input — first is always "front" (texture reference)
-_VIEW_LABELS = ["front", "right", "back", "left", "front_left", "front_right"]
+# Hunyuan3D-2mv view2idx only supports the 4 cardinal directions.
+# front_left / front_right are not in preprocessors.view2idx → KeyError.
+_VIEW_LABELS = ["front", "right", "back", "left"]
 
 # Texture quality tiers — tried in order, stepped down on CUDA OOM
 _PAINT_TIERS = [
@@ -195,7 +196,9 @@ class Hunyuan3DEngine(Engine):
 
         from hy3dshape import Hunyuan3DDiTFlowMatchingPipeline
 
-        n = len(images)
+        # Cap at supported view count (2mv only knows front/right/back/left)
+        n = min(len(images), len(_VIEW_LABELS))
+        images = images[:n]
         is_multi = n > 1
         model_id = self.MULTI_MODEL_ID if is_multi else self.SINGLE_MODEL_ID
         subfolder = self.MULTI_SUBFOLDER if is_multi else self.SINGLE_SUBFOLDER
