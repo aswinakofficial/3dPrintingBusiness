@@ -108,9 +108,10 @@ RUN pip install --no-cache-dir \
     "timm==0.9.16" torchdiffeq fast-simplification
 
 # Make Space code importable:
-#   /opt/hunyuan3d-space       → import hy3dshape (package dir lives here)
+#   /opt/hunyuan3d-space/hy3dshape → import hy3dshape (nested pkg: outer dir is NOT a package)
 #   /opt/hunyuan3d-space/hy3dpaint → import textureGenPipeline (module lives here)
-ENV PYTHONPATH=/opt/hunyuan3d-space:/opt/hunyuan3d-space/hy3dpaint:${PYTHONPATH}
+#   /opt/hunyuan3d-space           → any other Space-level imports
+ENV PYTHONPATH=/opt/hunyuan3d-space/hy3dshape:/opt/hunyuan3d-space/hy3dpaint:/opt/hunyuan3d-space:${PYTHONPATH}
 
 # Apply compatibility patches:
 #   A) Replace mesh_utils.py (removes bpy/Blender dependency)
