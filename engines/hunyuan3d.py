@@ -47,9 +47,9 @@ class _Hy3dgenFinder:
         if fullname in ("hy3dgen", "hy3dgen.shapegen"):
             return "hy3dshape"
         if fullname.startswith("hy3dgen.shapegen."):
-            return "hy3dshape." + fullname[len("hy3dgen.shapegen."):]
+            return "hy3dshape." + fullname[len("hy3dgen.shapegen.") :]
         if fullname.startswith("hy3dgen."):
-            return "hy3dshape." + fullname[len("hy3dgen."):]
+            return "hy3dshape." + fullname[len("hy3dgen.") :]
         return "hy3dshape"
 
     def load_module(self, fullname):
@@ -300,8 +300,11 @@ class Hunyuan3DEngine(Engine):
         # searching the path. Evict all utils.* entries so textureGenPipeline's
         # `from utils.simplify_mesh_utils import ...` finds hy3dpaint/utils/ instead.
         # Also evict textureGenPipeline itself to force a clean re-import.
-        _utils_saved = {k: sys.modules.pop(k) for k in list(sys.modules)
-                        if k == "utils" or k.startswith("utils.")}
+        _utils_saved = {
+            k: sys.modules.pop(k)
+            for k in list(sys.modules)
+            if k == "utils" or k.startswith("utils.")
+        }
         sys.modules.pop("textureGenPipeline", None)
 
         # cached_download was removed from huggingface_hub ≥ 0.17; patch before
