@@ -230,8 +230,6 @@ def patch_hunyuanpaintpbr_attn():
         ),
         "unet.modules.py": (
             '"""unet.modules — UNet module definitions (auto-generated stub)."""\n'
-            "from diffusers.models.unet_2d_condition import *  # noqa: F401,F403\n"
-            "from diffusers.models.unet_2d_blocks import *  # noqa: F401,F403\n"
             "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
         ),
     }
