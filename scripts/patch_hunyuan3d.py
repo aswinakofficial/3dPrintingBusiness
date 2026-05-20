@@ -211,9 +211,37 @@ def patch_texture_gen_pipeline_utils():
     print(f"[OK] textureGenPipeline: sys.path self-insertion patched → {target}")
 
 
+def patch_hunyuanpaintpbr_attn():
+    """Ensure unet.attn_processor.py exists in hy3dpaint/hunyuanpaintpbr/.
+
+    textureGenPipeline (or a diffusers helper it calls) opens this file directly.
+    If the Space clone didn't include it, search the rest of the clone first,
+    then fall back to a stub that re-exports standard diffusers attention processors.
+    """
+    import shutil
+    target = SPACE / "hy3dpaint/hunyuanpaintpbr/unet.attn_processor.py"
+    if target.exists():
+        print(f"[SKIP] {target} already exists")
+        return
+    # Look elsewhere in the Space
+    candidates = [p for p in SPACE.rglob("unet.attn_processor.py") if p != target]
+    if candidates:
+        shutil.copy(str(candidates[0]), str(target))
+        print(f"[OK] hunyuanpaintpbr: copied {candidates[0]} → {target}")
+        return
+    # Create minimal stub — re-exports all standard diffusers attention processors
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        '"""unet.attn_processor — diffusers attention processors (auto-generated stub)."""\n'
+        "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
+    )
+    print(f"[OK] hunyuanpaintpbr: created stub unet.attn_processor.py → {target}")
+
+
 if __name__ == "__main__":
     patch_mesh_utils()
     patch_basicsr()
     patch_hy3dshape_cached_download()
     patch_texture_gen_pipeline_utils()
+    patch_hunyuanpaintpbr_attn()
     print("[DONE] Hunyuan3D-2.1 patches applied")
