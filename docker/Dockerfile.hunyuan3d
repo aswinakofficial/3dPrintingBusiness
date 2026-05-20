@@ -77,13 +77,10 @@ RUN GIT_LFS_SKIP_SMUDGE=0 git clone --depth 1 \
 RUN test $(stat -c%s /opt/hunyuan3d-space/hy3dpaint/ckpt/RealESRGAN_x4plus.pth) -gt 1000000 \
     || (echo "ERROR: RealESRGAN_x4plus.pth is an LFS pointer — git-lfs pull failed" && exit 1)
 
-# Install hy3dshape + hy3dpaint packages from the Space repo.
-# Try root-level editable install first (may be a no-op if no root setup.py),
-# then explicitly install hy3dshape from its own subdirectory.
+# Install packages from the Space repo.
+# hy3dshape and textureGenPipeline are plain module dirs — no setup.py —
+# they are importable via PYTHONPATH=/opt/hunyuan3d-space set below.
 RUN pip install --no-cache-dir -e /opt/hunyuan3d-space --no-build-isolation 2>/dev/null || true
-RUN if [ -d /opt/hunyuan3d-space/hy3dshape ]; then \
-        pip install --no-cache-dir -e /opt/hunyuan3d-space/hy3dshape --no-build-isolation; \
-    fi
 RUN if [ -f /opt/hunyuan3d-space/requirements.txt ]; then \
         pip install --no-cache-dir -r /opt/hunyuan3d-space/requirements.txt; \
     fi
