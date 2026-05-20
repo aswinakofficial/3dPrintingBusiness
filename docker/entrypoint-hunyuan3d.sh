@@ -41,13 +41,12 @@ for pkg_name, label in packages:
     except ImportError as e:
         print(f"✗ {label} missing: {e}")
         all_ok = False
-# textureGenPipeline is checked separately (needs Space on sys.path)
+# textureGenPipeline check is advisory — engine falls back to untextured GLB
 try:
     import textureGenPipeline  # noqa: F401
     print("✓ textureGenPipeline (texture paint)")
-except ImportError as e:
-    print(f"✗ textureGenPipeline missing: {e}")
-    all_ok = False
+except Exception as e:
+    print(f"⚠ textureGenPipeline unavailable: {e} (will fall back to untextured GLB)")
 if not all_ok:
     exit(1)
 EOF
