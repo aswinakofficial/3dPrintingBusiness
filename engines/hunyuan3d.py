@@ -288,12 +288,18 @@ class Hunyuan3DEngine(Engine):
         timestamp: str,
         output_dir: Path,
     ) -> str | None:
-        # hy3dpaint must be at sys.path[0] so its own `utils/` package takes
-        # precedence over our app's /app/utils/ when textureGenPipeline imports
-        # `from utils.simplify_mesh_utils import ...`.
         hy3dpaint = str(_SPACE_DIR / "hy3dpaint")
         if hy3dpaint not in sys.path:
             sys.path.insert(0, hy3dpaint)
+
+        # /app/utils is already cached in sys.modules (our engine imported it at startup).
+        # sys.path ordering alone can't fix this — Python finds the cached module before
+        # searching the path. Evict all utils.* entries so textureGenPipeline's
+        # `from utils.simplify_mesh_utils import ...` finds hy3dpaint/utils/ instead.
+        # Also evict textureGenPipeline itself to force a clean re-import.
+        _utils_saved = {k: sys.modules.pop(k) for k in list(sys.modules)
+                        if k == "utils" or k.startswith("utils.")}
+        sys.modules.pop("textureGenPipeline", None)
 
         # cached_download was removed from huggingface_hub ≥ 0.17; patch before
         # textureGenPipeline (or basicsr/realesrgan) tries to import it.
@@ -304,68 +310,73 @@ class Hunyuan3DEngine(Engine):
 
         out_glb = output_dir / f"hunyuan3d_{timestamp}.glb"
 
-        for i, tier in enumerate(_PAINT_TIERS):
-            label = tier["label"]
-            try:
-                from textureGenPipeline import (  # type: ignore[import]
-                    Hunyuan3DPaintConfig,
-                    Hunyuan3DPaintPipeline,
-                )
+        try:
+            for i, tier in enumerate(_PAINT_TIERS):
+                label = tier["label"]
+                try:
+                    from textureGenPipeline import (  # type: ignore[import]
+                        Hunyuan3DPaintConfig,
+                        Hunyuan3DPaintPipeline,
+                    )
 
-                conf = Hunyuan3DPaintConfig(tier["views"], tier["resolution"])
-                conf.realesrgan_ckpt_path = str(
-                    _SPACE_DIR / "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
-                )
-                conf.multiview_cfg_path = str(
-                    _SPACE_DIR / "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
-                )
-                conf.custom_pipeline = str(_SPACE_DIR / "hy3dpaint/hunyuanpaintpbr")
-                conf.render_size = tier["render_size"]
-                conf.texture_size = tier["texture_size"]
-                paint = Hunyuan3DPaintPipeline(conf)
+                    conf = Hunyuan3DPaintConfig(tier["views"], tier["resolution"])
+                    conf.realesrgan_ckpt_path = str(
+                        _SPACE_DIR / "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
+                    )
+                    conf.multiview_cfg_path = str(
+                        _SPACE_DIR / "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
+                    )
+                    conf.custom_pipeline = str(_SPACE_DIR / "hy3dpaint/hunyuanpaintpbr")
+                    conf.render_size = tier["render_size"]
+                    conf.texture_size = tier["texture_size"]
+                    paint = Hunyuan3DPaintPipeline(conf)
 
-                out_obj = tmp_dir / f"textured_{label}.obj"
-                t0 = time.time()
-                logger.info(
-                    f"Texture tier={label}: views={tier['views']} "
-                    f"res={tier['resolution']} tex_size={tier['texture_size']}"
-                )
-                paint(
-                    mesh_path=str(obj_path),
-                    image_path=str(img_path),
-                    output_mesh_path=str(out_obj),
-                    save_glb=True,
-                )
-                # Pipeline writes <name>.glb alongside the OBJ
-                candidate_glb = out_obj.with_suffix(".glb")
-                if candidate_glb.exists():
-                    shutil.move(str(candidate_glb), str(out_glb))
+                    out_obj = tmp_dir / f"textured_{label}.obj"
+                    t0 = time.time()
                     logger.info(
-                        f"Texture done in {time.time()-t0:.1f}s "
-                        f"(tier={label}) → {out_glb}"
+                        f"Texture tier={label}: views={tier['views']} "
+                        f"res={tier['resolution']} tex_size={tier['texture_size']}"
                     )
-                    return str(out_glb)
-                logger.warning(
-                    f"Texture tier={label}: GLB not found at {candidate_glb}"
-                )
-
-            except Exception as exc:
-                oom = (
-                    "out of memory" in str(exc).lower()
-                    or "OutOfMemoryError" in type(exc).__name__
-                )
-                gc.collect()
-                torch.cuda.empty_cache()
-                if oom and i < len(_PAINT_TIERS) - 1:
+                    paint(
+                        mesh_path=str(obj_path),
+                        image_path=str(img_path),
+                        output_mesh_path=str(out_obj),
+                        save_glb=True,
+                    )
+                    # Pipeline writes <name>.glb alongside the OBJ
+                    candidate_glb = out_obj.with_suffix(".glb")
+                    if candidate_glb.exists():
+                        shutil.move(str(candidate_glb), str(out_glb))
+                        logger.info(
+                            f"Texture done in {time.time()-t0:.1f}s "
+                            f"(tier={label}) → {out_glb}"
+                        )
+                        return str(out_glb)
                     logger.warning(
-                        f"Texture OOM at tier={label}, stepping down to "
-                        f"tier={_PAINT_TIERS[i+1]['label']}"
+                        f"Texture tier={label}: GLB not found at {candidate_glb}"
                     )
-                    continue
-                logger.warning(f"Texture failed at tier={label} ({exc})")
-                return None
 
-        return None
+                except Exception as exc:
+                    oom = (
+                        "out of memory" in str(exc).lower()
+                        or "OutOfMemoryError" in type(exc).__name__
+                    )
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    if oom and i < len(_PAINT_TIERS) - 1:
+                        logger.warning(
+                            f"Texture OOM at tier={label}, stepping down to "
+                            f"tier={_PAINT_TIERS[i+1]['label']}"
+                        )
+                        continue
+                    logger.warning(f"Texture failed at tier={label} ({exc})")
+                    return None
+
+            return None
+        finally:
+            # Restore /app/utils so the rest of the engine (logger, post-processor)
+            # keeps working after textureGenPipeline loaded hy3dpaint/utils/ instead.
+            sys.modules.update(_utils_saved)
 
     def get_engine_info(self) -> dict:
         info = super().get_engine_info()
