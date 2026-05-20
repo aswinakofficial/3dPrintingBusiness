@@ -182,8 +182,38 @@ def patch_hy3dshape_cached_download():
         print("[SKIP] hy3dshape: no cached_download imports found (already clean)")
 
 
+def patch_texture_gen_pipeline_utils():
+    """Add self-path insertion to textureGenPipeline.py so utils.* resolves locally.
+
+    textureGenPipeline does `from utils.simplify_mesh_utils import ...` which
+    normally resolves to /app/utils/ (script dir is sys.path[0] at startup).
+    Prepending the file's own directory at the top of the module guarantees the
+    right utils/ is found regardless of the outer sys.path order.
+    """
+    target = SPACE / "hy3dpaint/textureGenPipeline.py"
+    if not target.exists():
+        print(f"[SKIP] textureGenPipeline.py not found at {target}")
+        return
+    content = target.read_text()
+    sentinel = "# _PATCH_SYSPATH_"
+    if sentinel in content:
+        print("[SKIP] textureGenPipeline: sys.path patch already applied")
+        return
+    injection = (
+        f"{sentinel}\n"
+        "import sys as _sys, os as _os\n"
+        "_hy3d = _os.path.dirname(_os.path.abspath(__file__))\n"
+        "if _hy3d in _sys.path: _sys.path.remove(_hy3d)\n"
+        "_sys.path.insert(0, _hy3d)\n"
+        "del _hy3d\n"
+    )
+    target.write_text(injection + content)
+    print(f"[OK] textureGenPipeline: sys.path self-insertion patched → {target}")
+
+
 if __name__ == "__main__":
     patch_mesh_utils()
     patch_basicsr()
     patch_hy3dshape_cached_download()
+    patch_texture_gen_pipeline_utils()
     print("[DONE] Hunyuan3D-2.1 patches applied")
