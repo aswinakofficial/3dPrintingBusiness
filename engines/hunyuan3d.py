@@ -72,7 +72,17 @@ class Hunyuan3DEngine(Engine):
         self.shapegen = None
 
     def validate_prerequisites(self) -> bool:
-        if not torch.cuda.is_available():
+        # GPU attachment can lag by a few seconds on freshly provisioned
+        # Container Apps nodes — retry rather than fail immediately.
+        for attempt in range(6):
+            if torch.cuda.is_available():
+                break
+            wait = 10 * (attempt + 1)
+            logger.warning(
+                f"CUDA not ready (attempt {attempt + 1}/6), retrying in {wait}s…"
+            )
+            time.sleep(wait)
+        else:
             raise RuntimeError("CUDA not available — Hunyuan3D-2 requires GPU")
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         if total_gb < 14:
