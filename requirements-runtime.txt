@@ -5,7 +5,7 @@
 # Core ML Framework
 torch==2.6.0
 # transformers is installed from GitHub in Dockerfile.trellis (dinov3_vit not yet on PyPI)
-diffusers==0.24.0
+diffusers==0.30.0
 accelerate>=0.25.0
 
 # 3D Processing & Mesh Operations
