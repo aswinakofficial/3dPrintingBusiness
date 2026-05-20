@@ -232,6 +232,12 @@ def patch_hunyuanpaintpbr_attn():
             '"""unet.modules — UNet module definitions (auto-generated stub)."""\n'
             "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
         ),
+        # diffusers custom_pipeline loader imports hunyuanpaintpbr/modules.py as
+        # diffusers_modules.local.modules — must exist as a real importable module.
+        "modules.py": (
+            '"""modules — HunyuanPaintPBR pipeline modules (auto-generated stub)."""\n'
+            "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
+        ),
     }
 
     for fname, stub_text in stubs.items():
