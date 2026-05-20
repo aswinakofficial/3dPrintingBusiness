@@ -212,30 +212,43 @@ def patch_texture_gen_pipeline_utils():
 
 
 def patch_hunyuanpaintpbr_attn():
-    """Ensure unet.attn_processor.py exists in hy3dpaint/hunyuanpaintpbr/.
+    """Ensure unet.*.py stubs exist in hy3dpaint/hunyuanpaintpbr/.
 
-    textureGenPipeline (or a diffusers helper it calls) opens this file directly.
-    If the Space clone didn't include it, search the rest of the clone first,
-    then fall back to a stub that re-exports standard diffusers attention processors.
+    diffusers' custom_pipeline loader opens these files directly by name.
+    The Space clone doesn't include them; create stubs that re-export the
+    relevant diffusers internals so the pipeline can proceed.
     """
     import shutil
-    target = SPACE / "hy3dpaint/hunyuanpaintpbr/unet.attn_processor.py"
-    if target.exists():
-        print(f"[SKIP] {target} already exists")
-        return
-    # Look elsewhere in the Space
-    candidates = [p for p in SPACE.rglob("unet.attn_processor.py") if p != target]
-    if candidates:
-        shutil.copy(str(candidates[0]), str(target))
-        print(f"[OK] hunyuanpaintpbr: copied {candidates[0]} → {target}")
-        return
-    # Create minimal stub — re-exports all standard diffusers attention processors
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        '"""unet.attn_processor — diffusers attention processors (auto-generated stub)."""\n'
-        "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
-    )
-    print(f"[OK] hunyuanpaintpbr: created stub unet.attn_processor.py → {target}")
+
+    paintpbr = SPACE / "hy3dpaint/hunyuanpaintpbr"
+    paintpbr.mkdir(parents=True, exist_ok=True)
+
+    stubs = {
+        "unet.attn_processor.py": (
+            '"""unet.attn_processor — diffusers attention processors (auto-generated stub)."""\n'
+            "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
+        ),
+        "unet.modules.py": (
+            '"""unet.modules — UNet module definitions (auto-generated stub)."""\n'
+            "from diffusers.models.unet_2d_condition import *  # noqa: F401,F403\n"
+            "from diffusers.models.unet_2d_blocks import *  # noqa: F401,F403\n"
+            "from diffusers.models.attention_processor import *  # noqa: F401,F403\n"
+        ),
+    }
+
+    for fname, stub_text in stubs.items():
+        target = paintpbr / fname
+        if target.exists():
+            print(f"[SKIP] {target.name} already exists")
+            continue
+        # Try to find it elsewhere in the Space clone first
+        candidates = [p for p in SPACE.rglob(fname) if p != target]
+        if candidates:
+            shutil.copy(str(candidates[0]), str(target))
+            print(f"[OK] hunyuanpaintpbr: copied {candidates[0].name} → {target}")
+        else:
+            target.write_text(stub_text)
+            print(f"[OK] hunyuanpaintpbr: created stub {fname} → {target}")
 
 
 if __name__ == "__main__":
