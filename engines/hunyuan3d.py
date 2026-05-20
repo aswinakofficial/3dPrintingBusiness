@@ -25,6 +25,34 @@ try:
 except ImportError:
     pass
 
+# Model configs on HuggingFace Hub reference the old package name `hy3dgen.*`.
+# The Space renamed it to `hy3dshape`. Install a meta-path finder that redirects
+# any `hy3dgen` import to the corresponding `hy3dshape` module at runtime.
+import importlib as _importlib
+import types as _types
+
+
+class _Hy3dgenFinder:
+    def find_module(self, fullname, path=None):
+        if fullname == "hy3dgen" or fullname.startswith("hy3dgen."):
+            return self
+        return None
+
+    def load_module(self, fullname):
+        if fullname in sys.modules:
+            return sys.modules[fullname]
+        hy3dshape_name = "hy3dshape" + fullname[len("hy3dgen"):]
+        try:
+            mod = _importlib.import_module(hy3dshape_name)
+        except ImportError:
+            mod = _types.ModuleType(fullname)
+        sys.modules[fullname] = mod
+        return mod
+
+
+if not any(isinstance(f, _Hy3dgenFinder) for f in sys.meta_path):
+    sys.meta_path.insert(0, _Hy3dgenFinder())
+
 from engines.base_engine import Engine, EngineConfig
 from utils.logger import get_logger
 from utils.pre_processor import ImagePreprocessor, ImageValidator
