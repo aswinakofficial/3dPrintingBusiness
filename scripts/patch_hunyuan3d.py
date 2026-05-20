@@ -8,6 +8,10 @@ Patch A: Replace hy3dpaint/DifferentiableRenderer/mesh_utils.py
 Patch B: Fix basicsr torchvision import
   — torchvision.transforms.functional_tensor.rgb_to_grayscale was removed
     in torchvision 0.17+; adds try/except fallback.
+
+Patch C: Fix hy3dshape cached_download import
+  — huggingface_hub removed cached_download in ≥ 0.17; hy3dshape source
+    imports it directly, so we replace with hf_hub_download alias.
 """
 import glob
 import importlib.util
@@ -153,7 +157,33 @@ def convert_obj_to_glb(obj_path, glb_path, **kwargs):
 '''
 
 
+def patch_hy3dshape_cached_download():
+    """Replace `from huggingface_hub import cached_download` in hy3dshape source."""
+    hy3dshape_dir = SPACE / "hy3dshape"
+    if not hy3dshape_dir.exists():
+        print(f"[SKIP] hy3dshape dir not found: {hy3dshape_dir}")
+        return
+    old = "from huggingface_hub import cached_download"
+    new = (
+        "try:\n"
+        "    from huggingface_hub import cached_download\n"
+        "except ImportError:\n"
+        "    from huggingface_hub import hf_hub_download as cached_download"
+    )
+    patched = 0
+    for py_file in hy3dshape_dir.rglob("*.py"):
+        content = py_file.read_text()
+        if old not in content:
+            continue
+        py_file.write_text(content.replace(old, new))
+        print(f"[OK] hy3dshape cached_download: patched {py_file}")
+        patched += 1
+    if patched == 0:
+        print("[SKIP] hy3dshape: no cached_download imports found (already clean)")
+
+
 if __name__ == "__main__":
     patch_mesh_utils()
     patch_basicsr()
+    patch_hy3dshape_cached_download()
     print("[DONE] Hunyuan3D-2.1 patches applied")

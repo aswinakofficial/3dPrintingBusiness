@@ -14,6 +14,13 @@ from PIL import Image
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
+# huggingface_hub removed cached_download in ≥ 0.17; hy3dshape imports it at module
+# level, so this shim must run before any `import hy3dshape` anywhere in the process.
+import huggingface_hub as _hfhub  # noqa: E402
+
+if not hasattr(_hfhub, "cached_download"):
+    _hfhub.cached_download = _hfhub.hf_hub_download
+
 from engines.base_engine import Engine, EngineConfig
 from utils.logger import get_logger
 from utils.pre_processor import ImagePreprocessor, ImageValidator

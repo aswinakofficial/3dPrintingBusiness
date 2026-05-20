@@ -29,6 +29,11 @@ import sys
 sys.path.insert(0, "/opt/hunyuan3d-space/hy3dpaint")
 sys.path.insert(0, "/opt/hunyuan3d-space/hy3dshape")
 sys.path.insert(0, "/opt/hunyuan3d-space")
+# cached_download removed from huggingface_hub >= 0.17; must shim BEFORE importing hy3dshape
+# because hy3dshape does `from huggingface_hub import cached_download` at module level.
+import huggingface_hub as _hfhub
+if not hasattr(_hfhub, 'cached_download'):
+    _hfhub.cached_download = _hfhub.hf_hub_download
 packages = [
     ('torch', 'PyTorch'),
     ('hy3dshape', 'hy3dshape (shape gen)'),
@@ -44,10 +49,6 @@ for pkg_name, label in packages:
     except ImportError as e:
         print(f"✗ {label} missing: {e}")
         all_ok = False
-# cached_download removed from huggingface_hub ≥ 0.17; shim before import
-import huggingface_hub as _hfhub
-if not hasattr(_hfhub, 'cached_download'):
-    _hfhub.cached_download = _hfhub.hf_hub_download
 # textureGenPipeline check is advisory — engine falls back to untextured GLB
 try:
     import textureGenPipeline  # noqa: F401
