@@ -26,7 +26,6 @@ sys.path.insert(0, "/opt/hunyuan3d-space")
 packages = [
     ('torch', 'PyTorch'),
     ('hy3dshape', 'hy3dshape (shape gen)'),
-    ('hy3dshape.pipelines', 'hy3dshape.pipelines'),
     ('trimesh', 'Trimesh'),
     ('PIL', 'Pillow'),
     ('rembg', 'rembg'),

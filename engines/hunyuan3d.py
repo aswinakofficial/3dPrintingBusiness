@@ -3,7 +3,6 @@
 import gc
 import os
 import shutil
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -80,7 +79,7 @@ class Hunyuan3DEngine(Engine):
         logger.info(f"GPU memory OK: {total_gb:.1f}GB")
 
         try:
-            import hy3dshape.pipelines  # noqa: F401
+            import hy3dshape  # noqa: F401
         except ImportError as exc:
             raise RuntimeError(f"hy3dshape not installed in container: {exc}")
 
@@ -130,7 +129,7 @@ class Hunyuan3DEngine(Engine):
         if not images:
             raise ValueError("No preprocessed images supplied")
 
-        from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+        from hy3dshape import Hunyuan3DDiTFlowMatchingPipeline
 
         n = len(images)
         is_multi = n > 1
@@ -222,9 +221,6 @@ class Hunyuan3DEngine(Engine):
         timestamp: str,
         output_dir: Path,
     ) -> str | None:
-        if str(_SPACE_DIR) not in sys.path:
-            sys.path.insert(0, str(_SPACE_DIR))
-
         out_glb = output_dir / f"hunyuan3d_{timestamp}.glb"
 
         for i, tier in enumerate(_PAINT_TIERS):
