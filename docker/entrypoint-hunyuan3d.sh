@@ -41,6 +41,10 @@ for pkg_name, label in packages:
     except ImportError as e:
         print(f"✗ {label} missing: {e}")
         all_ok = False
+# cached_download removed from huggingface_hub ≥ 0.17; shim before import
+import huggingface_hub as _hfhub
+if not hasattr(_hfhub, 'cached_download'):
+    _hfhub.cached_download = _hfhub.hf_hub_download
 # textureGenPipeline check is advisory — engine falls back to untextured GLB
 try:
     import textureGenPipeline  # noqa: F401

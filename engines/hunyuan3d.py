@@ -229,6 +229,13 @@ class Hunyuan3DEngine(Engine):
         if hy3dpaint not in sys.path:
             sys.path.insert(0, hy3dpaint)
 
+        # cached_download was removed from huggingface_hub ≥ 0.17; patch before
+        # textureGenPipeline (or basicsr/realesrgan) tries to import it.
+        import huggingface_hub as _hfhub
+
+        if not hasattr(_hfhub, "cached_download"):
+            _hfhub.cached_download = _hfhub.hf_hub_download
+
         out_glb = output_dir / f"hunyuan3d_{timestamp}.glb"
 
         for i, tier in enumerate(_PAINT_TIERS):
