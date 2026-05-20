@@ -21,10 +21,12 @@ EOF
 echo ""
 echo "Checking hy3dgen packages..."
 python3 << 'EOF'
+import sys
+sys.path.insert(0, "/opt/hunyuan3d-space")
 packages = [
     ('torch', 'PyTorch'),
-    ('hy3dgen.shapegen', 'hy3dgen.shapegen'),
-    ('hy3dgen.texgen', 'hy3dgen.texgen'),
+    ('hy3dshape', 'hy3dshape (shape gen)'),
+    ('hy3dshape.pipelines', 'hy3dshape.pipelines'),
     ('trimesh', 'Trimesh'),
     ('PIL', 'Pillow'),
     ('rembg', 'rembg'),
@@ -34,9 +36,16 @@ for pkg_name, label in packages:
     try:
         __import__(pkg_name)
         print(f"✓ {label}")
-    except ImportError:
-        print(f"✗ {label} missing")
+    except ImportError as e:
+        print(f"✗ {label} missing: {e}")
         all_ok = False
+# textureGenPipeline is checked separately (needs Space on sys.path)
+try:
+    import textureGenPipeline  # noqa: F401
+    print("✓ textureGenPipeline (texture paint)")
+except ImportError as e:
+    print(f"✗ textureGenPipeline missing: {e}")
+    all_ok = False
 if not all_ok:
     exit(1)
 EOF
