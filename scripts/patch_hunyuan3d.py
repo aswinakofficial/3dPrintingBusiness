@@ -255,10 +255,49 @@ def patch_hunyuanpaintpbr_attn():
             print(f"[OK] hunyuanpaintpbr: created stub {fname} → {target}")
 
 
+def patch_mesh_render_inpaint():
+    """Add Python fallback for meshVerticeInpaint in MeshRender.py.
+
+    mesh_inpaint_processor is a C++ pybind11 extension compiled from
+    compile_mesh_painter.sh. The import is already wrapped in try/except, but
+    no fallback is defined — so meshVerticeInpaint remains undefined and raises
+    NameError when uv_inpaint(vertex_inpaint=True) runs later.
+
+    This adds a no-op fallback inside the except block so the texture pipeline
+    completes even without the compiled extension. If the C++ extension was
+    compiled successfully, it takes priority and this fallback is never reached.
+    """
+    target = SPACE / "hy3dpaint/DifferentiableRenderer/MeshRender.py"
+    if not target.exists():
+        print(f"[SKIP] MeshRender.py not found at {target}")
+        return
+    content = target.read_text()
+    sentinel = "# _PATCH_MESHVERTICE_FALLBACK_"
+    if sentinel in content:
+        print("[SKIP] MeshRender.py: meshVerticeInpaint fallback already applied")
+        return
+    old = (
+        'except:\n'
+        '    print("InPaint Function CAN NOT BE Imported!!!")'
+    )
+    new = (
+        'except:\n'
+        '    print("InPaint Function CAN NOT BE Imported!!!")  ' + sentinel + '\n'
+        '    def meshVerticeInpaint(texture_np, mask, vtx_pos, vtx_uv, pos_idx, uv_idx):\n'
+        '        return texture_np, mask'
+    )
+    if old not in content:
+        print("[SKIP] MeshRender.py: pattern not found (already patched or changed upstream)")
+        return
+    target.write_text(content.replace(old, new))
+    print(f"[OK] MeshRender.py: meshVerticeInpaint Python fallback added → {target}")
+
+
 if __name__ == "__main__":
     patch_mesh_utils()
     patch_basicsr()
     patch_hy3dshape_cached_download()
     patch_texture_gen_pipeline_utils()
     patch_hunyuanpaintpbr_attn()
+    patch_mesh_render_inpaint()
     print("[DONE] Hunyuan3D-2.1 patches applied")

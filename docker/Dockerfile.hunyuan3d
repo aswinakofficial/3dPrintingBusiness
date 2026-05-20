@@ -105,7 +105,18 @@ RUN pip install --no-cache-dir \
     "cupy-cuda12x==13.4.1" \
     xatlas open3d imageio "scikit-image==0.24.0" \
     "basicsr==1.4.2" "realesrgan==0.3.0" \
-    "timm==0.9.16" torchdiffeq fast-simplification
+    "timm==0.9.16" torchdiffeq fast-simplification \
+    pybind11
+
+# Compile mesh_inpaint_processor.cpp — C++ pybind11 extension for vertex inpainting.
+# Without this, MeshRender.py silently skips the import and meshVerticeInpaint is
+# undefined at runtime, causing NameError in uv_inpaint(vertex_inpaint=True).
+RUN cd /opt/hunyuan3d-space/hy3dpaint/DifferentiableRenderer && \
+    c++ -O3 -Wall -shared -std=c++11 -fPIC \
+    $(python -m pybind11 --includes) \
+    mesh_inpaint_processor.cpp \
+    -o "mesh_inpaint_processor$(python3-config --extension-suffix)" && \
+    echo "[OK] mesh_inpaint_processor compiled"
 
 # Make Space code importable:
 #   /opt/hunyuan3d-space/hy3dshape → import hy3dshape (nested pkg: outer dir is NOT a package)
