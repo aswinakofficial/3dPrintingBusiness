@@ -22,6 +22,9 @@ echo ""
 echo "Checking hy3dgen packages..."
 python3 << 'EOF'
 import sys
+# hy3dpaint must come first: textureGenPipeline imports from utils.simplify_mesh_utils
+# which shadows our app's /app/utils/ otherwise.
+sys.path.insert(0, "/opt/hunyuan3d-space/hy3dpaint")
 sys.path.insert(0, "/opt/hunyuan3d-space")
 packages = [
     ('torch', 'PyTorch'),

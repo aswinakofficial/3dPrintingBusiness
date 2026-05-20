@@ -3,6 +3,7 @@
 import gc
 import os
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -221,6 +222,13 @@ class Hunyuan3DEngine(Engine):
         timestamp: str,
         output_dir: Path,
     ) -> str | None:
+        # hy3dpaint must be at sys.path[0] so its own `utils/` package takes
+        # precedence over our app's /app/utils/ when textureGenPipeline imports
+        # `from utils.simplify_mesh_utils import ...`.
+        hy3dpaint = str(_SPACE_DIR / "hy3dpaint")
+        if hy3dpaint not in sys.path:
+            sys.path.insert(0, hy3dpaint)
+
         out_glb = output_dir / f"hunyuan3d_{timestamp}.glb"
 
         for i, tier in enumerate(_PAINT_TIERS):
