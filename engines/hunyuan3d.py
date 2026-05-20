@@ -288,9 +288,12 @@ class Hunyuan3DEngine(Engine):
         timestamp: str,
         output_dir: Path,
     ) -> str | None:
+        # Force hy3dpaint to sys.path[0] — it may already be present (from PYTHONPATH)
+        # but after /app, so /app/utils would win over hy3dpaint/utils on a fresh search.
         hy3dpaint = str(_SPACE_DIR / "hy3dpaint")
-        if hy3dpaint not in sys.path:
-            sys.path.insert(0, hy3dpaint)
+        if hy3dpaint in sys.path:
+            sys.path.remove(hy3dpaint)
+        sys.path.insert(0, hy3dpaint)
 
         # /app/utils is already cached in sys.modules (our engine imported it at startup).
         # sys.path ordering alone can't fix this — Python finds the cached module before
