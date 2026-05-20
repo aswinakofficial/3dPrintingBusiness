@@ -33,17 +33,31 @@ import types as _types
 
 
 class _Hy3dgenFinder:
+    # The old hy3dgen package was split: hy3dgen.shapegen → hy3dshape (the whole pkg).
+    # Model configs downloaded from HF Hub still reference hy3dgen.shapegen.models.*
+    # Mapping: hy3dgen / hy3dgen.shapegen → hy3dshape
+    #          hy3dgen.shapegen.X         → hy3dshape.X
+
     def find_module(self, fullname, path=None):
         if fullname == "hy3dgen" or fullname.startswith("hy3dgen."):
             return self
         return None
 
+    def _to_hy3dshape(self, fullname):
+        if fullname in ("hy3dgen", "hy3dgen.shapegen"):
+            return "hy3dshape"
+        if fullname.startswith("hy3dgen.shapegen."):
+            return "hy3dshape." + fullname[len("hy3dgen.shapegen."):]
+        if fullname.startswith("hy3dgen."):
+            return "hy3dshape." + fullname[len("hy3dgen."):]
+        return "hy3dshape"
+
     def load_module(self, fullname):
         if fullname in sys.modules:
             return sys.modules[fullname]
-        hy3dshape_name = "hy3dshape" + fullname[len("hy3dgen"):]
+        target = self._to_hy3dshape(fullname)
         try:
-            mod = _importlib.import_module(hy3dshape_name)
+            mod = _importlib.import_module(target)
         except ImportError:
             mod = _types.ModuleType(fullname)
         sys.modules[fullname] = mod
