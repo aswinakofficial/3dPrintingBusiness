@@ -85,21 +85,21 @@ _PAINT_TIERS = [
     {
         "views": 8,
         "resolution": 512,
-        "render_size": 1024,
-        "texture_size": 1024,
+        "render_size": 2048,
+        "texture_size": 2048,
         "label": "high",
     },
     {
         "views": 6,
         "resolution": 512,
         "render_size": 1024,
-        "texture_size": 1024,
+        "texture_size": 2048,
         "label": "med",
     },
     {
         "views": 4,
         "resolution": 512,
-        "render_size": 512,
+        "render_size": 1024,
         "texture_size": 1024,
         "label": "low",
     },
@@ -223,12 +223,12 @@ class Hunyuan3DEngine(Engine):
 
         t0 = time.time()
         logger.info(
-            "Running shape generation (num_inference_steps=50, octree_resolution=384)..."
+            "Running shape generation (num_inference_steps=75, octree_resolution=512)..."
         )
         mesh = self.shapegen(
             **shape_input,
-            num_inference_steps=50,
-            octree_resolution=384,
+            num_inference_steps=75,
+            octree_resolution=512,
         )[0]
         logger.info(
             f"Shape done in {time.time()-t0:.1f}s — "

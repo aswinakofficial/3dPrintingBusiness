@@ -255,6 +255,30 @@ def patch_hunyuanpaintpbr_attn():
             print(f"[OK] hunyuanpaintpbr: created stub {fname} → {target}")
 
 
+def patch_simplify_mesh_utils():
+    """Increase remesh target face count from 40K → 150K.
+
+    The texture pipeline remeshes the shape mesh before UV-wrapping and texture
+    baking. The default (40,000 faces) is too aggressive for organic figurine
+    shapes — it makes smooth curves look blocky/faceted. 150K preserves surface
+    detail while keeping UV parameterisation tractable.
+    """
+    target = SPACE / "hy3dpaint/utils/simplify_mesh_utils.py"
+    if not target.exists():
+        print(f"[SKIP] simplify_mesh_utils.py not found at {target}")
+        return
+    content = target.read_text()
+    old = "def mesh_simplify_trimesh(inputpath, outputpath, target_count=40000):"
+    new = "def mesh_simplify_trimesh(inputpath, outputpath, target_count=150000):"
+    if old not in content:
+        print(
+            "[SKIP] simplify_mesh_utils: target_count pattern not found (already patched?)"
+        )
+        return
+    target.write_text(content.replace(old, new))
+    print(f"[OK] simplify_mesh_utils: remesh target_count 40000 → 150000 → {target}")
+
+
 def patch_mesh_render_inpaint():
     """Add Python fallback for meshVerticeInpaint in MeshRender.py.
 
@@ -276,18 +300,17 @@ def patch_mesh_render_inpaint():
     if sentinel in content:
         print("[SKIP] MeshRender.py: meshVerticeInpaint fallback already applied")
         return
-    old = (
-        'except:\n'
-        '    print("InPaint Function CAN NOT BE Imported!!!")'
-    )
+    old = "except:\n" '    print("InPaint Function CAN NOT BE Imported!!!")'
     new = (
-        'except:\n'
-        '    print("InPaint Function CAN NOT BE Imported!!!")  ' + sentinel + '\n'
-        '    def meshVerticeInpaint(texture_np, mask, vtx_pos, vtx_uv, pos_idx, uv_idx):\n'
-        '        return texture_np, mask'
+        "except:\n"
+        '    print("InPaint Function CAN NOT BE Imported!!!")  ' + sentinel + "\n"
+        "    def meshVerticeInpaint(texture_np, mask, vtx_pos, vtx_uv, pos_idx, uv_idx):\n"
+        "        return texture_np, mask"
     )
     if old not in content:
-        print("[SKIP] MeshRender.py: pattern not found (already patched or changed upstream)")
+        print(
+            "[SKIP] MeshRender.py: pattern not found (already patched or changed upstream)"
+        )
         return
     target.write_text(content.replace(old, new))
     print(f"[OK] MeshRender.py: meshVerticeInpaint Python fallback added → {target}")
@@ -299,5 +322,6 @@ if __name__ == "__main__":
     patch_hy3dshape_cached_download()
     patch_texture_gen_pipeline_utils()
     patch_hunyuanpaintpbr_attn()
+    patch_simplify_mesh_utils()
     patch_mesh_render_inpaint()
     print("[DONE] Hunyuan3D-2.1 patches applied")
