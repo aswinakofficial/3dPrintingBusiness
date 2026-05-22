@@ -1,0 +1,89 @@
+/* Engine card colors */
+.engine-card {
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+.engine-card:hover { border-color: #4b5563; }
+.engine-card.selected.blue { border-color: #6366f1; }
+.engine-card.selected.green { border-color: #22c55e; }
+.engine-card.selected.purple { border-color: #a855f7; }
+.engine-card.selected.orange { border-color: #f97316; }
+
+.engine-badge-blue   { background: #1e1b4b; color: #818cf8; }
+.engine-badge-green  { background: #052e16; color: #4ade80; }
+.engine-badge-purple { background: #2e1065; color: #c084fc; }
+.engine-badge-orange { background: #431407; color: #fb923c; }
+
+/* Status badges */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.status-badge.queued   { background: #374151; color: #9ca3af; }
+.status-badge.running  { background: #1e3a5f; color: #60a5fa; animation: pulse 1.5s ease-in-out infinite; }
+.status-badge.succeeded { background: #052e16; color: #4ade80; }
+.status-badge.failed   { background: #450a0a; color: #f87171; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Nav buttons */
+.nav-btn {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.nav-btn:hover { color: #fff; }
+.nav-btn.active { color: #fff; border-bottom-color: #6366f1; }
+
+/* Param buttons */
+.param-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: #1f2937;
+  color: #9ca3af;
+  border: 1px solid #374151;
+  transition: background 0.1s, color 0.1s;
+}
+.param-btn.active {
+  background: #3730a3;
+  color: #fff;
+  border-color: #4f46e5;
+}
+
+/* History cards */
+.job-card {
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.job-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* Thumbnail */
+.thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #374151;
+}
+.thumb-sm {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #374151;
+}

@@ -30,6 +30,13 @@ engines:
     max_images: 6
     model_id: tencent/Hunyuan3D-2mv
 
+  triposg:
+    enabled: true
+    docker_image: 3dfigurine-triposg:latest
+    resolution: 1024
+    max_images: 1
+    model_id: vast-ai/TripoSG
+
 post_processing:
   export_stl: true
   auto_repair: true

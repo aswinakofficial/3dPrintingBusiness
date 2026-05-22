@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Figurine Lab</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-sans">
+
+  <!-- Nav -->
+  <nav class="border-b border-gray-800 px-6 py-3 flex items-center gap-6">
+    <span class="text-xl font-bold tracking-tight text-white">3D Figurine Lab</span>
+    <button onclick="showView('submit')" class="nav-btn" id="nav-submit">New Job</button>
+    <button onclick="showView('history')" class="nav-btn" id="nav-history">History</button>
+    <button onclick="showView('compare')" class="nav-btn" id="nav-compare">Compare</button>
+  </nav>
+
+  <!-- Submit View -->
+  <div id="view-submit" class="view max-w-4xl mx-auto px-6 py-8">
+    <h1 class="text-2xl font-bold mb-6">New Job</h1>
+
+    <!-- Engine selector -->
+    <p class="text-sm text-gray-400 mb-3 uppercase tracking-wider font-semibold">Select Engine</p>
+    <div class="grid grid-cols-3 gap-4 mb-8" id="engine-cards"></div>
+
+    <!-- Upload zone -->
+    <p class="text-sm text-gray-400 mb-3 uppercase tracking-wider font-semibold">Upload Images</p>
+    <div id="drop-zone"
+      class="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center cursor-pointer hover:border-gray-500 transition mb-2"
+      ondragover="event.preventDefault()" ondrop="handleDrop(event)" onclick="document.getElementById('file-input').click()">
+      <div class="text-4xl mb-2">🖼️</div>
+      <p class="text-gray-400">Drag & drop images here, or <span class="text-indigo-400 underline">click to browse</span></p>
+      <p class="text-xs text-gray-600 mt-1">JPG, PNG, WEBP, BMP supported</p>
+    </div>
+    <input type="file" id="file-input" multiple accept="image/*" class="hidden" onchange="addFiles(this.files)" />
+    <p id="image-hint" class="text-xs text-gray-500 mb-4"></p>
+
+    <!-- Thumbnail strip -->
+    <div id="thumb-strip" class="flex flex-wrap gap-2 mb-6"></div>
+
+    <!-- Parameters -->
+    <div class="bg-gray-900 rounded-xl p-5 mb-6 grid grid-cols-2 gap-x-8 gap-y-4">
+      <div>
+        <label class="block text-xs text-gray-400 mb-1 uppercase tracking-wider">GPU</label>
+        <div class="flex gap-2">
+          <button onclick="setParam('gpu', 'T4')" class="param-btn" id="gpu-T4">T4</button>
+          <button onclick="setParam('gpu', 'A100')" class="param-btn active" id="gpu-A100">A100</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1 uppercase tracking-wider">Max Runtime</label>
+        <div class="flex items-center gap-3">
+          <input type="range" min="15" max="90" step="5" value="45" id="runtime-slider"
+            oninput="document.getElementById('runtime-val').textContent=this.value+'min'"
+            class="w-full accent-indigo-500" />
+          <span id="runtime-val" class="text-sm font-mono w-16">45min</span>
+        </div>
+      </div>
+      <div class="col-span-2">
+        <label class="flex items-center gap-3 cursor-pointer select-none">
+          <div class="relative">
+            <input type="checkbox" id="toggle-generate-views" class="sr-only peer" onchange="updateGenerateViewsHint()" />
+            <div class="w-10 h-5 bg-gray-700 rounded-full peer peer-checked:bg-indigo-600 transition"></div>
+            <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition peer-checked:translate-x-5"></div>
+          </div>
+          <div>
+            <span class="text-sm font-medium">Generate multi-views via Zero123++</span>
+            <p class="text-xs text-gray-500" id="generate-views-hint">Synthesise 4 views from your front image — recommended for single-image inputs</p>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <button onclick="submitJob()"
+      class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-lg font-semibold text-white transition disabled:opacity-40"
+      id="submit-btn">
+      Submit Job
+    </button>
+    <p id="submit-error" class="text-red-400 text-sm mt-3 hidden"></p>
+  </div>
+
+  <!-- Status View -->
+  <div id="view-status" class="view hidden max-w-5xl mx-auto px-6 py-8">
+    <div class="flex items-center gap-4 mb-6">
+      <button onclick="showView('history')" class="text-gray-500 hover:text-white text-sm">← Back</button>
+      <h1 class="text-2xl font-bold">Job Status</h1>
+    </div>
+    <div class="bg-gray-900 rounded-xl p-5 mb-6 flex items-center justify-between">
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Job ID</p>
+        <p class="font-mono text-sm" id="status-job-id">—</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Engine</p>
+        <p id="status-engine" class="font-semibold">—</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Elapsed</p>
+        <p id="status-elapsed" class="font-mono">—</p>
+      </div>
+      <div>
+        <span id="status-badge" class="status-badge queued">Queued</span>
+      </div>
+    </div>
+    <div id="viewer-section" class="hidden">
+      <div class="flex gap-6">
+        <!-- 3D viewer -->
+        <div class="flex-1 bg-gray-900 rounded-xl overflow-hidden" style="height:520px">
+          <model-viewer id="model-viewer-main"
+            auto-rotate camera-controls shadow-intensity="1"
+            style="width:100%;height:100%;background:#111827"
+            exposure="1">
+          </model-viewer>
+        </div>
+        <!-- Sidebar -->
+        <div class="w-64 flex flex-col gap-4">
+          <div class="bg-gray-900 rounded-xl p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Mesh Stats</p>
+            <div id="mesh-stats" class="text-sm space-y-2"></div>
+          </div>
+          <div class="bg-gray-900 rounded-xl p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Input Images</p>
+            <div id="input-thumbs" class="flex flex-wrap gap-2"></div>
+          </div>
+          <a id="download-btn" href="#" download="model.glb"
+            class="block text-center py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition">
+            ⬇ Download GLB
+          </a>
+          <button onclick="addToCompare(currentJobId)"
+            class="py-2 bg-indigo-900 hover:bg-indigo-800 rounded-lg text-sm font-medium transition">
+            ⊕ Add to Compare
+          </button>
+        </div>
+      </div>
+    </div>
+    <p id="status-error" class="text-red-400 text-sm hidden mt-4"></p>
+  </div>
+
+  <!-- History View -->
+  <div id="view-history" class="view hidden max-w-6xl mx-auto px-6 py-8">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold">History</h1>
+      <div class="flex gap-2">
+        <select id="filter-engine" onchange="renderHistory()" class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm">
+          <option value="">All Engines</option>
+          <option value="trellis">TRELLIS.2</option>
+          <option value="meshroom">Meshroom</option>
+          <option value="hunyuan3d">Hunyuan3D</option>
+          <option value="triposg">TripoSG</option>
+        </select>
+        <select id="filter-status" onchange="renderHistory()" class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm">
+          <option value="">All Statuses</option>
+          <option value="succeeded">Succeeded</option>
+          <option value="failed">Failed</option>
+          <option value="running">Running</option>
+        </select>
+        <button onclick="loadHistory()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-sm transition">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="history-grid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+    <p id="history-empty" class="text-gray-500 text-center py-20 hidden">No jobs found.</p>
+  </div>
+
+  <!-- Compare View -->
+  <div id="view-compare" class="view hidden px-6 py-8">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold">Compare</h1>
+      <button onclick="clearCompare()" class="text-sm text-gray-400 hover:text-white transition">Clear all</button>
+    </div>
+    <p class="text-gray-500 text-sm mb-6">Add jobs from History or a job result page. Up to 3 side-by-side.</p>
+    <div id="compare-grid" class="grid gap-6" style="grid-template-columns: repeat(auto-fit, minmax(360px, 1fr))"></div>
+    <p id="compare-empty" class="text-gray-500 text-center py-20">No models added yet.</p>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

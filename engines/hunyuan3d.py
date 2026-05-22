@@ -264,6 +264,12 @@ class Hunyuan3DEngine(Engine):
             f"Shape OBJ: {len(mesh.vertices):,}v {len(mesh.faces):,}f → {obj_path}"
         )
 
+        # Laplacian smoothing removes Dual Contouring "staircase" voxel-boundary
+        # artifacts that make organic shapes look blocky. Applied to the raw DC mesh
+        # before the texture pipeline remeshes to 150K faces, so the remesh starts
+        # from a smoother surface and preserves the corrected topology.
+        obj_path = self._smooth_mesh(obj_path, tmp_dir)
+
         textured_glb = self._run_texture_with_fallback(
             obj_path, front_img_path, tmp_dir, timestamp, output_dir
         )
@@ -383,6 +389,29 @@ class Hunyuan3DEngine(Engine):
             # Restore /app/utils so the rest of the engine (logger, post-processor)
             # keeps working after textureGenPipeline loaded hy3dpaint/utils/ instead.
             sys.modules.update(_utils_saved)
+
+    def _smooth_mesh(self, obj_path: Path, tmp_dir: Path, iterations: int = 3) -> Path:
+        """Apply Laplacian smoothing and write smoothed_shape.obj; return its path."""
+        import trimesh
+        import trimesh.smoothing
+
+        try:
+            raw = trimesh.load(str(obj_path), process=False)
+            if not isinstance(raw, trimesh.Trimesh):
+                logger.warning("Smooth: loaded mesh is not Trimesh, skipping smoothing")
+                return obj_path
+            t0 = time.time()
+            trimesh.smoothing.filter_laplacian(raw, lamb=0.5, iterations=iterations, volume_constraint=True)
+            smoothed_path = tmp_dir / "shape_smooth.obj"
+            raw.export(str(smoothed_path))
+            logger.info(
+                f"Laplacian smoothing ({iterations} iters) → {time.time()-t0:.1f}s, "
+                f"{len(raw.vertices):,}v {len(raw.faces):,}f → {smoothed_path}"
+            )
+            return smoothed_path
+        except Exception as exc:
+            logger.warning(f"Laplacian smoothing failed ({exc}), using unsmoothed mesh")
+            return obj_path
 
     def get_engine_info(self) -> dict:
         info = super().get_engine_info()

@@ -8,6 +8,7 @@ from engines.base_engine import Engine, EngineConfig
 from engines.trellis_v2 import TRELLIS2Engine
 from engines.meshroom_sfm import MeshroomEngine
 from engines.hunyuan3d import Hunyuan3DEngine
+from engines.triposg import TripoSGEngine
 from utils.logger import get_logger
 
 logger = get_logger()
@@ -18,8 +19,7 @@ ENGINE_REGISTRY: Dict[str, Type[Engine]] = {
     "trellis": TRELLIS2Engine,
     "meshroom": MeshroomEngine,
     "hunyuan3d": Hunyuan3DEngine,
-    # "instantsplat": InstantSplatEngine,  # Future
-    # "colmap": COLMAPEngine,  # Future
+    "triposg": TripoSGEngine,
 }
 
 

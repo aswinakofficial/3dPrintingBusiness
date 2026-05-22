@@ -82,7 +82,7 @@ GPU_SKU_TO_PROFILE = {
     "A100": "gpu-a100",
 }
 
-SUPPORTED_ENGINES = ("trellis", "meshroom", "hunyuan3d")
+SUPPORTED_ENGINES = ("trellis", "meshroom", "hunyuan3d", "triposg")
 
 # Resource sizing per engine. Container Apps T4 profile gives 8 vCPU / 56 GiB,
 # A100 gives 24 / 220 GiB. We request a fraction of that.
@@ -90,6 +90,7 @@ CONTAINER_BASE_CONFIG = {
     "meshroom": {"image_repo": "3dfigurine-meshroom", "cpu": 4.0, "memory": "16Gi"},
     "trellis": {"image_repo": "3dfigurine-trellis", "cpu": 8.0, "memory": "56Gi"},
     "hunyuan3d": {"image_repo": "3dfigurine-hunyuan3d", "cpu": 8.0, "memory": "56Gi"},
+    "triposg": {"image_repo": "3dfigurine-triposg", "cpu": 8.0, "memory": "56Gi"},
 }
 
 
@@ -186,6 +187,7 @@ ENGINE_IMAGE_LIMITS = {
     "trellis": (1, 4),
     "meshroom": (10, 50),
     "hunyuan3d": (1, 6),
+    "triposg": (1, 1),
 }
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -238,6 +240,7 @@ def submit_job(
     skip_download: bool = False,
     cleanup: bool = False,
     max_runtime_minutes: int = 30,
+    generate_views: bool = False,
     azure: Optional[AzureConfig] = None,
 ) -> JobResult:
     """Upload, run, and (optionally) download a 3D-processing job on Container Apps.
@@ -267,6 +270,7 @@ def submit_job(
         engine=engine,
         gpu_sku=gpu_sku,
         max_runtime_minutes=max_runtime_minutes,
+        generate_views=generate_views,
     )
     execution_name = runner.start_execution(job_id)
     success = runner.monitor_execution(
@@ -452,6 +456,7 @@ class JobsRunner:
         engine: str,
         gpu_sku: str,
         max_runtime_minutes: int,
+        generate_views: bool = False,
     ) -> None:
         if engine not in CONTAINER_BASE_CONFIG:
             raise ValueError(f"Unknown engine: {engine}")
@@ -534,6 +539,7 @@ class JobsRunner:
                             f"/workspace/inputs/{job_id}",
                             "--output",
                             f"/workspace/outputs/{job_id}",
+                            *(["--generate-views"] if generate_views else []),
                         ],
                         volume_mounts=[
                             VolumeMount(
@@ -717,6 +723,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Hard cap on job runtime (default: 30).",
     )
     p.add_argument(
+        "--generate-views",
+        action="store_true",
+        help=(
+            "Run Zero123++ to synthesise 4 cardinal views from the first input image "
+            "before shape generation. Strongly recommended when providing 1 image."
+        ),
+    )
+    p.add_argument(
         "--smoke-test",
         action="store_true",
         help=(
@@ -787,6 +801,7 @@ def main() -> int:
             skip_download=args.skip_download,
             cleanup=cleanup,
             max_runtime_minutes=max_runtime,
+            generate_views=args.generate_views,
             azure=azure,
         )
     except (FileNotFoundError, ValueError) as e:
