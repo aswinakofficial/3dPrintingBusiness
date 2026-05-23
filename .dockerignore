@@ -76,6 +76,10 @@ docker/*
 !docker/entrypoint-meshroom.sh
 !docker/entrypoint-hunyuan3d.sh
 !docker/Dockerfile.hunyuan3d
+!docker/Dockerfile.triposg
+!docker/entrypoint-triposg.sh
+!docker/Dockerfile.sf3d
+!docker/entrypoint-sf3d.sh
 !docker/shared/
 !docker/shared/Dockerfile.base
 docker-compose*
