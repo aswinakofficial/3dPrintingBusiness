@@ -54,6 +54,13 @@ ENGINE_META = {
         "desc": "Stability AI Stable Fast 3D. Sub-second inference, UV-unwrapped PBR textures. Sharpest colours.",
         "color": "teal",
     },
+    "instantmesh": {
+        "label": "InstantMesh",
+        "min_images": 1,
+        "max_images": 6,
+        "desc": "TencentARC LRM + FlexiCubes. 1 photo (AI-synthesises 6 views) or 6 turntable shots for highest accuracy.",
+        "color": "yellow",
+    },
 }
 
 

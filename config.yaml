@@ -44,6 +44,14 @@ engines:
     max_images: 1
     model_id: stabilityai/stable-fast-3d
 
+  instantmesh:
+    enabled: true
+    docker_image: 3dfigurine-instantmesh:latest
+    resolution: 320
+    min_images: 1
+    max_images: 6
+    model_id: TencentARC/InstantMesh
+
 post_processing:
   export_stl: true
   auto_repair: true

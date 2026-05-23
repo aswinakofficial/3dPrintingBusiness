@@ -80,6 +80,8 @@ docker/*
 !docker/entrypoint-triposg.sh
 !docker/Dockerfile.sf3d
 !docker/entrypoint-sf3d.sh
+!docker/Dockerfile.instantmesh
+!docker/entrypoint-instantmesh.sh
 !docker/shared/
 !docker/shared/Dockerfile.base
 docker-compose*

@@ -1,0 +1,114 @@
+# InstantMesh Engine Dockerfile
+# Multi-view LRM + FlexiCubes (TencentARC/InstantMesh, Apache 2.0)
+# Two modes: single-image via Zero123++ OR direct 6-view input.
+#
+# Heavy deps:
+#   nvdiffrast  — CUDA rasterizer used by FlexiCubes (compiled from source)
+#   xatlas      — UV unwrapping for texture baking
+#   diffusers==0.20.2 — Zero123++ custom pipeline requires this exact version
+
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+LABEL maintainer="3D Figurine Lab"
+LABEL description="InstantMesh multi-view LRM + FlexiCubes engine"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TZ=UTC
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ENV HF_HOME=/workspace/.cache/huggingface
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libjpeg-dev \
+    ninja-build \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# PyTorch CUDA 12.1 — must be installed before nvdiffrast compilation
+RUN pip install --no-cache-dir \
+    torch==2.5.1 torchvision==0.20.1 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Clone InstantMesh repo (src/ is imported at runtime via sys.path)
+RUN git clone --depth 1 https://github.com/TencentARC/InstantMesh /opt/instantmesh
+
+# nvdiffrast — CUDA rasterizer required by FlexiCubes. Compiled from source
+# because no PyPI wheel exists. Requires CUDA devel headers (this image has them).
+RUN pip install --no-cache-dir \
+    git+https://github.com/NVlabs/nvdiffrast.git
+
+# InstantMesh Python deps (excluding torch which is already installed, and
+# gradio/webui deps not needed in the container engine)
+RUN pip install --no-cache-dir \
+    "pytorch-lightning==2.1.2" \
+    "transformers==4.34.1" \
+    "diffusers==0.20.2" \
+    "accelerate" \
+    "omegaconf" \
+    "einops" \
+    "huggingface-hub" \
+    "xatlas" \
+    "PyMCubes" \
+    "plyfile" \
+    "imageio[ffmpeg]" \
+    "torchmetrics"
+
+# Background removal
+RUN pip install --no-cache-dir \
+    "rembg==2.0.65" \
+    "onnxruntime-gpu==1.16.3"
+
+# Mesh / image processing
+RUN pip install --no-cache-dir \
+    "trimesh==4.4.7" \
+    "pygltflib==1.16.3" \
+    "open3d" \
+    "scipy" \
+    "pyyaml" \
+    "loguru" \
+    "rich"
+
+COPY requirements-runtime.txt .
+RUN grep -vE "^torch(vision|audio)?[=<>!]" requirements-runtime.txt \
+    > /tmp/req-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/req-no-torch.txt
+
+COPY config.yaml .
+COPY main.py .
+COPY engines/ ./engines/
+COPY utils/ ./utils/
+COPY scripts/ ./scripts/
+COPY docker/entrypoint-instantmesh.sh /app/entrypoint.sh
+
+RUN mkdir -p /app/input /app/output /app/logs && chmod +x /app/entrypoint.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD python3 -c "import torch; assert torch.cuda.is_available(); import sys; sys.path.insert(0,'/opt/instantmesh'); from src.utils.train_util import instantiate_from_config" || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python3", "main.py", "--help"]
