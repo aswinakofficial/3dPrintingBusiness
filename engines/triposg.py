@@ -20,9 +20,9 @@ from PIL import Image
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-from engines.base_engine import Engine, EngineConfig
-from utils.logger import get_logger
-from utils.pre_processor import ImagePreprocessor, ImageValidator
+from engines.base_engine import Engine, EngineConfig  # noqa: E402
+from utils.logger import get_logger  # noqa: E402
+from utils.pre_processor import ImagePreprocessor, ImageValidator  # noqa: E402
 
 logger = get_logger()
 

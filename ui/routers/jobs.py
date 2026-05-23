@@ -3,7 +3,6 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
 
@@ -12,7 +11,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from scripts.run_job import ENGINE_IMAGE_LIMITS, submit_job  # noqa: E402
+from scripts.run_job import submit_job  # noqa: E402
 
 router = APIRouter()
 
