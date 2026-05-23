@@ -72,7 +72,7 @@ RUN pip install --no-cache-dir \
     "accelerate" \
     "omegaconf" \
     "einops" \
-    "huggingface-hub" \
+    "huggingface-hub>=0.16.4,<1.0" \
     "xatlas" \
     "PyMCubes" \
     "plyfile" \
@@ -95,7 +95,8 @@ RUN pip install --no-cache-dir \
     "rich"
 
 COPY requirements-runtime.txt .
-RUN grep -vE "^torch(vision|audio)?[=<>!]" requirements-runtime.txt \
+# Exclude torch*, diffusers, and huggingface-hub — all pinned above for Zero123++ compatibility
+RUN grep -vE "^(torch(vision|audio)?|diffusers|huggingface.hub)[=<>!]" requirements-runtime.txt \
     > /tmp/req-no-torch.txt && \
     pip install --no-cache-dir -r /tmp/req-no-torch.txt
 
