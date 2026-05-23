@@ -37,6 +37,13 @@ engines:
     max_images: 1
     model_id: vast-ai/TripoSG
 
+  sf3d:
+    enabled: true
+    docker_image: 3dfigurine-sf3d:latest
+    resolution: 1024
+    max_images: 1
+    model_id: stabilityai/stable-fast-3d
+
 post_processing:
   export_stl: true
   auto_repair: true

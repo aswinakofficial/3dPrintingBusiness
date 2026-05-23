@@ -9,7 +9,7 @@ let statusPollTimer = null;
 let allJobs = [];
 let compareList = []; // [{job_id, engine}]
 
-const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple', triposg: 'orange' };
+const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple', triposg: 'orange', sf3d: 'teal' };
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(name) {
@@ -48,7 +48,7 @@ async function initEngines() {
 
 function selectEngine(key, col) {
   document.querySelectorAll('.engine-card').forEach(c => {
-    c.classList.remove('selected', 'blue', 'green', 'purple');
+    c.classList.remove('selected', 'blue', 'green', 'purple', 'orange', 'teal');
   });
   const card = document.getElementById(`engine-card-${key}`);
   card?.classList.add('selected', col || ENGINE_COLORS[key] || 'blue');

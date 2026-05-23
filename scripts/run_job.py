@@ -82,7 +82,7 @@ GPU_SKU_TO_PROFILE = {
     "A100": "gpu-a100",
 }
 
-SUPPORTED_ENGINES = ("trellis", "meshroom", "hunyuan3d", "triposg")
+SUPPORTED_ENGINES = ("trellis", "meshroom", "hunyuan3d", "triposg", "sf3d")
 
 # Resource sizing per engine. Container Apps T4 profile gives 8 vCPU / 56 GiB,
 # A100 gives 24 / 220 GiB. We request a fraction of that.
@@ -91,6 +91,7 @@ CONTAINER_BASE_CONFIG = {
     "trellis": {"image_repo": "3dfigurine-trellis", "cpu": 8.0, "memory": "56Gi"},
     "hunyuan3d": {"image_repo": "3dfigurine-hunyuan3d", "cpu": 8.0, "memory": "56Gi"},
     "triposg": {"image_repo": "3dfigurine-triposg", "cpu": 8.0, "memory": "56Gi"},
+    "sf3d": {"image_repo": "3dfigurine-sf3d", "cpu": 8.0, "memory": "56Gi"},
 }
 
 
@@ -188,6 +189,7 @@ ENGINE_IMAGE_LIMITS = {
     "meshroom": (10, 50),
     "hunyuan3d": (1, 6),
     "triposg": (1, 1),
+    "sf3d": (1, 1),
 }
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 

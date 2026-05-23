@@ -1,0 +1,101 @@
+# SF3D Engine Dockerfile — Stability AI Stable Fast 3D
+# Single-image → UV-textured GLB in <1s inference
+# Model: stabilityai/stable-fast-3d (GATED — requires HF_TOKEN)
+#
+# The SF3D repo includes local packages (texture_baker/, uv_unwrapper/) that
+# must be installed from the cloned directory; pip install from PyPI alone won't work.
+
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+LABEL maintainer="3D Figurine Lab"
+LABEL description="Stable Fast 3D single-image-to-textured-GLB engine"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TZ=UTC
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ENV HF_HOME=/workspace/.cache/huggingface
+# HF_TOKEN is injected at runtime by run_job.py / Container Apps env vars
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libjpeg-dev \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# PyTorch CUDA 12.1 (must come before SF3D requirements so the right CUDA
+# variant of torch is installed instead of the CPU default)
+RUN pip install --no-cache-dir \
+    torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Clone stable-fast-3d and install it with its local sub-packages.
+# The repo's requirements.txt references ./texture_baker/ and ./uv_unwrapper/
+# as local editable installs, so we must clone first and install from there.
+RUN git clone --depth 1 https://github.com/Stability-AI/stable-fast-3d /opt/sf3d
+
+# Install SF3D requirements (excluding torch — already installed)
+RUN grep -vE "^torch[^-]|^torchvision|^torchaudio" /opt/sf3d/requirements.txt \
+    > /tmp/sf3d-req-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/sf3d-req-no-torch.txt
+
+# Install the sf3d package itself (editable so it can find local data files)
+RUN pip install --no-cache-dir -e /opt/sf3d/
+
+# Background removal
+RUN pip install --no-cache-dir \
+    "rembg==2.0.65" \
+    "onnxruntime-gpu==1.16.3"
+
+# Extra mesh/image deps
+RUN pip install --no-cache-dir \
+    "trimesh==4.4.7" \
+    "pygltflib==1.16.3" \
+    pyyaml \
+    loguru \
+    rich \
+    scipy
+
+COPY requirements-runtime.txt .
+RUN grep -vE "^torch(vision|audio)?[=<>!]" requirements-runtime.txt \
+    > /tmp/req-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/req-no-torch.txt
+
+COPY config.yaml .
+COPY main.py .
+COPY engines/ ./engines/
+COPY utils/ ./utils/
+COPY scripts/ ./scripts/
+COPY docker/entrypoint-sf3d.sh /app/entrypoint.sh
+
+RUN mkdir -p /app/input /app/output /app/logs && chmod +x /app/entrypoint.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD python3 -c "import torch; assert torch.cuda.is_available(); from sf3d.system import SF3D" || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python3", "main.py", "--help"]

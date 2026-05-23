@@ -48,6 +48,13 @@ ENGINE_META = {
         "desc": "VAST-AI Flow-Matching DiT. Best single-image quality — closest to Meshy.ai.",
         "color": "orange",
     },
+    "sf3d": {
+        "label": "SF3D",
+        "min_images": 1,
+        "max_images": 1,
+        "desc": "Stability AI Stable Fast 3D. Sub-second inference, UV-unwrapped PBR textures. Sharpest colours.",
+        "color": "teal",
+    },
 }
 
 

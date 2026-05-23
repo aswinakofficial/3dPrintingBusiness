@@ -9,11 +9,13 @@
 .engine-card.selected.green { border-color: #22c55e; }
 .engine-card.selected.purple { border-color: #a855f7; }
 .engine-card.selected.orange { border-color: #f97316; }
+.engine-card.selected.teal { border-color: #14b8a6; }
 
 .engine-badge-blue   { background: #1e1b4b; color: #818cf8; }
 .engine-badge-green  { background: #052e16; color: #4ade80; }
 .engine-badge-purple { background: #2e1065; color: #c084fc; }
 .engine-badge-orange { background: #431407; color: #fb923c; }
+.engine-badge-teal   { background: #042f2e; color: #2dd4bf; }
 
 /* Status badges */
 .status-badge {
