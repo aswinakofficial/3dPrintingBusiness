@@ -26,10 +26,16 @@ app.include_router(jobs.router)
 app.include_router(outputs.router)
 
 # Serve static frontend files; this must come last so API routes win
-app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
+app.mount(
+    "/",
+    StaticFiles(directory=Path(__file__).parent / "static", html=True),
+    name="static",
+)
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("ui.app:app", host="127.0.0.1", port=7860, reload=True, app_dir=str(_ROOT))
+    uvicorn.run(
+        "ui.app:app", host="127.0.0.1", port=7860, reload=True, app_dir=str(_ROOT)
+    )

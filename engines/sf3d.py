@@ -54,7 +54,9 @@ class SF3DEngine(Engine):
             if torch.cuda.is_available():
                 break
             wait = 10 * (attempt + 1)
-            logger.warning(f"CUDA not ready (attempt {attempt + 1}/6), retrying in {wait}s…")
+            logger.warning(
+                f"CUDA not ready (attempt {attempt + 1}/6), retrying in {wait}s…"
+            )
             time.sleep(wait)
         else:
             raise RuntimeError("CUDA not available — SF3D requires GPU")
@@ -85,7 +87,9 @@ class SF3DEngine(Engine):
 
         from utils.pre_processor import ImagePreprocessor, ImageValidator
 
-        validated = ImageValidator.validate_input_images(image_paths, allow_directory=False)
+        validated = ImageValidator.validate_input_images(
+            image_paths, allow_directory=False
+        )
         if len(validated) > 1:
             logger.warning(f"SF3D uses 1 image; got {len(validated)}, using first")
         path = validated[0]
@@ -95,6 +99,7 @@ class SF3DEngine(Engine):
         # Background removal — SF3D expects RGBA with alpha mask on subject
         try:
             import rembg
+
             session = rembg.new_session("birefnet-general")
             img = rembg.remove(img, session=session)
             logger.info(f"Background removed (birefnet-general): {Path(path).name}")
@@ -148,7 +153,10 @@ class SF3DEngine(Engine):
                 return mesh, time.strftime("%Y%m%d_%H%M%S")
 
             except Exception as exc:
-                oom = "out of memory" in str(exc).lower() or "OutOfMemoryError" in type(exc).__name__
+                oom = (
+                    "out of memory" in str(exc).lower()
+                    or "OutOfMemoryError" in type(exc).__name__
+                )
                 gc.collect()
                 torch.cuda.empty_cache()
                 if oom and i < len(_BAKE_TIERS) - 1:

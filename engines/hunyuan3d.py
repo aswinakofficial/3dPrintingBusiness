@@ -401,7 +401,9 @@ class Hunyuan3DEngine(Engine):
                 logger.warning("Smooth: loaded mesh is not Trimesh, skipping smoothing")
                 return obj_path
             t0 = time.time()
-            trimesh.smoothing.filter_laplacian(raw, lamb=0.5, iterations=iterations, volume_constraint=True)
+            trimesh.smoothing.filter_laplacian(
+                raw, lamb=0.5, iterations=iterations, volume_constraint=True
+            )
             smoothed_path = tmp_dir / "shape_smooth.obj"
             raw.export(str(smoothed_path))
             logger.info(

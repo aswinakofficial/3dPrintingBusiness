@@ -52,7 +52,9 @@ class TripoSGEngine(Engine):
             if torch.cuda.is_available():
                 break
             wait = 10 * (attempt + 1)
-            logger.warning(f"CUDA not ready (attempt {attempt + 1}/6), retrying in {wait}s…")
+            logger.warning(
+                f"CUDA not ready (attempt {attempt + 1}/6), retrying in {wait}s…"
+            )
             time.sleep(wait)
         else:
             raise RuntimeError("CUDA not available — TripoSG requires GPU")
@@ -74,7 +76,9 @@ class TripoSGEngine(Engine):
         if isinstance(image_paths, str):
             image_paths = [image_paths]
 
-        validated = ImageValidator.validate_input_images(image_paths, allow_directory=False)
+        validated = ImageValidator.validate_input_images(
+            image_paths, allow_directory=False
+        )
         # TripoSG is optimised for single-image input; use the first image only
         if len(validated) > 1:
             logger.warning(f"TripoSG uses 1 image; got {len(validated)}, using first")
@@ -83,6 +87,7 @@ class TripoSGEngine(Engine):
         img = ImagePreprocessor.load_image(path).convert("RGBA")
         try:
             import rembg
+
             session = rembg.new_session("birefnet-general")
             img = rembg.remove(img, session=session)
             logger.info(f"Background removed (birefnet-general): {Path(path).name}")
@@ -134,7 +139,10 @@ class TripoSGEngine(Engine):
                 return mesh, time.strftime("%Y%m%d_%H%M%S")
 
             except Exception as exc:
-                oom = "out of memory" in str(exc).lower() or "OutOfMemoryError" in type(exc).__name__
+                oom = (
+                    "out of memory" in str(exc).lower()
+                    or "OutOfMemoryError" in type(exc).__name__
+                )
                 gc.collect()
                 torch.cuda.empty_cache()
                 if oom and i < len(self._INFER_TIERS) - 1:
@@ -157,7 +165,9 @@ class TripoSGEngine(Engine):
         try:
             if isinstance(mesh, trimesh.Trimesh):
                 t0 = time.time()
-                trimesh.smoothing.filter_laplacian(mesh, lamb=0.5, iterations=3, volume_constraint=True)
+                trimesh.smoothing.filter_laplacian(
+                    mesh, lamb=0.5, iterations=3, volume_constraint=True
+                )
                 logger.info(
                     f"Laplacian smoothing → {time.time()-t0:.1f}s, "
                     f"{len(mesh.vertices):,}v {len(mesh.faces):,}f"

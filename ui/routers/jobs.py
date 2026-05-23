@@ -108,7 +108,15 @@ async def create_job(
     }
 
     use_generate_views = generate_views.lower() in ("true", "1", "yes")
-    background_tasks.add_task(_run_job, job_id, engine, input_dir, gpu_sku, max_runtime_minutes, use_generate_views)
+    background_tasks.add_task(
+        _run_job,
+        job_id,
+        engine,
+        input_dir,
+        gpu_sku,
+        max_runtime_minutes,
+        use_generate_views,
+    )
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -134,7 +142,9 @@ def _run_job(
             generate_views=generate_views,
         )
         _jobs[job_id]["status"] = "succeeded" if result.success else "failed"
-        _jobs[job_id]["output_dir"] = str(result.output_dir) if result.output_dir else None
+        _jobs[job_id]["output_dir"] = (
+            str(result.output_dir) if result.output_dir else None
+        )
     except Exception as exc:
         _jobs[job_id]["status"] = "failed"
         _jobs[job_id]["error"] = str(exc)
