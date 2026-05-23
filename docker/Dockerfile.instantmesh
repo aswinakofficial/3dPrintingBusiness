@@ -57,9 +57,10 @@ RUN pip install --no-cache-dir \
 # Clone InstantMesh repo (src/ is imported at runtime via sys.path)
 RUN git clone --depth 1 https://github.com/TencentARC/InstantMesh /opt/instantmesh
 
-# nvdiffrast — CUDA rasterizer required by FlexiCubes. Compiled from source
-# because no PyPI wheel exists. Requires CUDA devel headers (this image has them).
-RUN pip install --no-cache-dir \
+# nvdiffrast — CUDA rasterizer required by FlexiCubes. Compiled from source.
+# --no-build-isolation keeps CUDA env vars visible to the build subprocess
+# (pip's isolated build env would otherwise strip CUDA_HOME/PATH and nvcc lookup fails).
+RUN pip install --no-cache-dir --no-build-isolation \
     git+https://github.com/NVlabs/nvdiffrast.git
 
 # InstantMesh Python deps (excluding torch which is already installed, and

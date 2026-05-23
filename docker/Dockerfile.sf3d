@@ -58,8 +58,10 @@ RUN pip install --no-cache-dir \
 # as local editable installs, so we must clone first and install from there.
 RUN git clone --depth 1 https://github.com/Stability-AI/stable-fast-3d /opt/sf3d
 
-# Install SF3D requirements (excluding torch — already installed)
-RUN grep -vE "^torch[^-]|^torchvision|^torchaudio" /opt/sf3d/requirements.txt \
+# Install SF3D requirements. Must run from /opt/sf3d so that the relative-path
+# deps in requirements.txt (./texture_baker/, ./uv_unwrapper/) resolve correctly.
+RUN cd /opt/sf3d && \
+    grep -vE "^torch[^-]|^torchvision|^torchaudio" requirements.txt \
     > /tmp/sf3d-req-no-torch.txt && \
     pip install --no-cache-dir -r /tmp/sf3d-req-no-torch.txt
 
