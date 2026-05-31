@@ -52,3 +52,21 @@ def serve_image(job_id: str, filename: str):
     if not img:
         raise HTTPException(404, f"Image not found: {filename}")
     return FileResponse(str(img), media_type="image/png")
+
+
+@router.get("/outputs/{job_id}/print-report")
+def serve_print_report(job_id: str):
+    job_dir = _job_output_dir(job_id)
+    report = next(job_dir.rglob("print_report.json"), None)
+    if not report:
+        raise HTTPException(404, f"No print_report.json for job: {job_id}")
+    return json.loads(report.read_text())
+
+
+@router.get("/outputs/{job_id}/stl")
+def serve_stl(job_id: str):
+    job_dir = _job_output_dir(job_id)
+    stl = next(job_dir.rglob("final_mesh.stl"), None)
+    if not stl:
+        raise HTTPException(404, f"No STL found for job: {job_id}")
+    return FileResponse(str(stl), media_type="model/stl", filename="model.stl")

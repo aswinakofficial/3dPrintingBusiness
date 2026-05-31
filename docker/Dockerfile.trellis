@@ -93,6 +93,7 @@ RUN pip install --no-cache-dir \
 # Our app's runtime dependencies
 COPY requirements-runtime.txt .
 RUN pip install --no-cache-dir -r requirements-runtime.txt
+RUN pip install --no-cache-dir "pymeshfix" "pyfqmr"
 
 # nvdiffrast — required by trellis2 renderers (rasterisation)
 RUN git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/nvdiffrast && \

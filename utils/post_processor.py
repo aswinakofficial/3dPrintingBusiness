@@ -1,5 +1,6 @@
 """Post-processing pipeline for 3D mesh preparation and 3D printing optimization."""
 
+import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
@@ -40,17 +41,15 @@ class PostProcessingConfig:
     simplify_mesh: bool = False
     target_reduction: float = 0.1  # 10% reduction
 
+    # Optimizer settings (Layer 2)
+    enable_optimizer: bool = True
+    target_face_count: int = 0  # 0 = auto from engine profile
+
 
 class MeshRepair:
     """Repairs and cleans mesh geometry for 3D printing."""
 
     def __init__(self, config: PostProcessingConfig):
-        """
-        Initialize mesh repair handler.
-
-        Args:
-            config: PostProcessingConfig instance
-        """
         self.config = config
         logger.debug("Initialized MeshRepair handler")
 
@@ -65,27 +64,16 @@ class MeshRepair:
         4. Fill small holes
         5. Remove duplicate vertices
         6. Validate final mesh
-
-        Args:
-            mesh: Input mesh to repair
-
-        Returns:
-            Repaired mesh
-
-        Raises:
-            ValueError: If mesh repair fails
         """
         logger.info(
             f"Repairing mesh with {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
         )
 
         try:
-            # Remove infinite values and NaNs
             if self.config.remove_infinite_values:
                 mesh.remove_infinite_values()
                 logger.debug("Removed infinite values")
 
-            # Remove degenerate faces
             if self.config.remove_degenerate_faces:
                 initial_faces = len(mesh.faces)
                 mesh.remove_degenerate_faces()
@@ -93,18 +81,15 @@ class MeshRepair:
                 if removed > 0:
                     logger.info(f"Removed {removed} degenerate faces")
 
-            # Fix non-manifold edges
             if self.config.repair_non_manifold:
                 mesh.merge_vertices()
                 logger.debug("Merged duplicate vertices")
 
-            # Fill small holes
             if self.config.max_hole_size > 0:
                 holes_filled = self._fill_holes(mesh, self.config.max_hole_size)
                 if holes_filled > 0:
                     logger.info(f"Filled {holes_filled} holes")
 
-            # Final validation
             if not getattr(mesh, "is_valid", True):
                 logger.warning(
                     "Mesh still has validity issues after repair, attempting additional fixes"
@@ -113,7 +98,8 @@ class MeshRepair:
                 logger.debug("Removed unreferenced vertices")
 
             logger.info(
-                f"Repair complete: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces, valid={getattr(mesh, 'is_valid', 'unknown')}"
+                f"Repair complete: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces, "
+                f"valid={getattr(mesh, 'is_valid', 'unknown')}"
             )
 
             return mesh
@@ -124,30 +110,17 @@ class MeshRepair:
             raise ValueError(error_msg)
 
     def _fill_holes(self, mesh: trimesh.Trimesh, max_hole_size: int) -> int:
-        """
-        Fill small holes in mesh.
-
-        Args:
-            mesh: Mesh to fill holes in
-            max_hole_size: Maximum hole size in mm³ to fill
-
-        Returns:
-            Number of holes filled
-        """
         try:
-            # Get boundary edges
             boundaries = mesh.split(only_watertight=False)
             holes_filled = 0
 
             for submesh in boundaries:
                 if not submesh.is_watertight:
-                    # Estimate hole size from submesh
                     hole_volume = submesh.volume if submesh.volume is not None else 0
                     if 0 < hole_volume < max_hole_size:
                         holes_filled += 1
                         logger.debug(f"Identified hole with volume {hole_volume}mm³")
 
-            # Attempt fill using trimesh
             if hasattr(mesh, "fill_holes"):
                 mesh.fill_holes()
                 logger.debug("Filled holes using trimesh fill_holes()")
@@ -163,48 +136,22 @@ class MeshHollowing:
     """Creates hollow mesh shells with uniform wall thickness for 3D printing."""
 
     def __init__(self, config: PostProcessingConfig):
-        """
-        Initialize mesh hollowing handler.
-
-        Args:
-            config: PostProcessingConfig instance
-        """
         self.config = config
         logger.debug("Initialized MeshHollowing handler")
 
     def hollow_mesh(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-        """
-        Create hollow shell from solid mesh with uniform wall thickness.
-
-        Process:
-        1. Validate input mesh is watertight
-        2. Create outer shell as offset
-        3. Create inner shell (inset)
-        4. Merge shells to create hollow structure
-        5. Add drainage holes if needed
-
-        Args:
-            mesh: Solid input mesh
-
-        Returns:
-            Hollow mesh with uniform wall thickness
-
-        Raises:
-            ValueError: If hollowing fails
-        """
+        """Create hollow shell from solid mesh with uniform wall thickness."""
         logger.info(
             f"Creating hollow shell with {self.config.wall_thickness}mm wall thickness"
         )
 
         try:
-            # Validate mesh is suitable for hollowing
             if not mesh.is_watertight:
                 logger.warning(
                     "Mesh is not watertight, attempting repair before hollowing"
                 )
                 mesh = self._make_watertight(mesh)
 
-            # Create voxel-based offset
             hollow_mesh = self._create_hollow_voxel(
                 mesh,
                 wall_thickness=self.config.wall_thickness,
@@ -217,11 +164,11 @@ class MeshHollowing:
                     mesh, wall_thickness=self.config.wall_thickness
                 )
 
-            # Add drainage hole if created interior cavities
             hollow_mesh = self._add_drainage_holes(hollow_mesh)
 
             logger.info(
-                f"Hollowing complete: {len(hollow_mesh.vertices)} vertices, {len(hollow_mesh.faces)} faces"
+                f"Hollowing complete: {len(hollow_mesh.vertices)} vertices, "
+                f"{len(hollow_mesh.faces)} faces"
             )
 
             return hollow_mesh
@@ -232,19 +179,8 @@ class MeshHollowing:
             raise ValueError(error_msg)
 
     def _make_watertight(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-        """
-        Attempt to make mesh watertight using morphological operations.
-
-        Args:
-            mesh: Input mesh
-
-        Returns:
-            Watertight mesh
-        """
         logger.debug("Attempting to make mesh watertight")
-
         try:
-            # Use convex hull as fallback (conservative)
             if hasattr(mesh, "convex_hull"):
                 hull = mesh.convex_hull
                 logger.debug(f"Using convex hull: {len(hull.vertices)} vertices")
@@ -260,41 +196,24 @@ class MeshHollowing:
         wall_thickness: float,
         voxel_resolution: float,
     ) -> Optional[trimesh.Trimesh]:
-        """
-        Create hollow mesh using voxelization method.
-
-        Args:
-            mesh: Input mesh
-            wall_thickness: Desired wall thickness in mm
-            voxel_resolution: Resolution of voxel grid in mm
-
-        Returns:
-            Hollow mesh or None if voxelization fails
-        """
         try:
             logger.debug(
-                f"Voxelizing mesh with resolution {voxel_resolution}mm, wall thickness {wall_thickness}mm"
+                f"Voxelizing mesh with resolution {voxel_resolution}mm, "
+                f"wall thickness {wall_thickness}mm"
             )
 
-            # Convert to voxels
             pitch = voxel_resolution
             voxels = mesh.voxelized(pitch=pitch)
-
-            # Create inner cavity by inset
             voxel_array = voxels.matrix.copy()
 
-            # Erode the voxel grid by wall thickness (in voxels)
             erosion_voxels = max(1, int(wall_thickness / voxel_resolution))
             logger.debug(f"Eroding by {erosion_voxels} voxels")
 
             from scipy.ndimage import binary_erosion
 
             eroded = binary_erosion(voxel_array, iterations=erosion_voxels)
-
-            # Subtract eroded from original to create shell
             shell_voxels = voxel_array & ~eroded
 
-            # Convert back to mesh
             voxels.matrix[:] = shell_voxels
             hollow = voxels.marching_cubes
 
@@ -311,29 +230,14 @@ class MeshHollowing:
     def _create_hollow_offset(
         self, mesh: trimesh.Trimesh, wall_thickness: float
     ) -> trimesh.Trimesh:
-        """
-        Create hollow mesh using offset method.
-
-        Simpler fallback: offsets mesh inward to create shell.
-
-        Args:
-            mesh: Input mesh
-            wall_thickness: Wall thickness in mm
-
-        Returns:
-            Hollow mesh
-        """
         try:
             logger.debug(f"Using offset method with wall thickness {wall_thickness}mm")
 
-            # Try trimesh offset (may not be available)
             if hasattr(mesh, "apply_scale"):
-                # Create inner cavity by scaling inward
                 inner_mesh = mesh.copy()
                 scale_factor = 1 - (wall_thickness / max(mesh.extents))
                 inner_mesh.apply_scale(scale_factor)
 
-                # Combine outer and inner as two-sided surface
                 combined = trimesh.util.concatenate([mesh, inner_mesh])
                 logger.debug(
                     f"Created hollow with combined offset: {len(combined.vertices)} vertices"
@@ -350,18 +254,7 @@ class MeshHollowing:
     def _add_drainage_holes(
         self, mesh: trimesh.Trimesh, hole_diameter: float = 3.0
     ) -> trimesh.Trimesh:
-        """
-        Add drainage holes for interior cavities (post-processing).
-
-        Args:
-            mesh: Hollow mesh
-            hole_diameter: Diameter of drainage hole in mm
-
-        Returns:
-            Mesh with drainage holes marked (metadata only, not modified)
-        """
         logger.debug(f"Marking drainage hole locations (diameter {hole_diameter}mm)")
-        # Actual hole drilling would be done in Phase 4 with post-processing metadata
         return mesh
 
 
@@ -369,40 +262,16 @@ class SupportGenerator:
     """Generates minimal support structures for overhanging geometry."""
 
     def __init__(self, config: PostProcessingConfig):
-        """
-        Initialize support generator.
-
-        Args:
-            config: PostProcessingConfig instance
-        """
         self.config = config
         logger.debug("Initialized SupportGenerator handler")
 
     def generate_supports(self, mesh: trimesh.Trimesh) -> Dict[str, Any]:
-        """
-        Generate support structures for overhanging surfaces.
-
-        Process:
-        1. Identify overhanging faces (> angle_threshold from vertical)
-        2. Group overhangs into islands
-        3. Generate minimal support columns
-        4. Create raft (optional) for bed adhesion
-
-        Args:
-            mesh: Input mesh
-
-        Returns:
-            Dict with support mesh and metadata
-
-        Raises:
-            ValueError: If support generation fails
-        """
+        """Generate support structures for overhanging surfaces."""
         logger.info(
             f"Generating supports for overhangs > {self.config.support_angle_threshold}°"
         )
 
         try:
-            # Identify overhangs
             overhangs = self._identify_overhangs(mesh)
             if len(overhangs) == 0:
                 logger.info("No overhangs detected, no supports needed")
@@ -414,14 +283,11 @@ class SupportGenerator:
 
             logger.info(f"Detected {len(overhangs)} overhanging faces")
 
-            # Group overhangs
             support_regions = self._group_supports(mesh, overhangs)
             logger.info(f"Grouped into {len(support_regions)} support regions")
 
-            # Generate support columns
             support_mesh = self._create_support_columns(mesh, support_regions)
 
-            # Add raft
             if self.config.raft_enabled:
                 support_mesh = self._add_raft(mesh, support_mesh)
                 logger.debug("Added raft for bed adhesion")
@@ -443,35 +309,17 @@ class SupportGenerator:
             raise ValueError(error_msg)
 
     def _identify_overhangs(self, mesh: trimesh.Trimesh) -> np.ndarray:
-        """
-        Identify faces that overhang (insufficient support below).
-
-        Args:
-            mesh: Input mesh
-
-        Returns:
-            Array of overhang face indices
-        """
         try:
-            # Get face normals
             face_normals = mesh.face_normals
-            # Vertical direction (0, 0, 1)
             up_vector = np.array([0, 0, 1])
-
-            # Angle between normal and vertical
             angles = np.arccos(np.clip(np.dot(face_normals, up_vector), -1, 1))
             angles_deg = np.degrees(angles)
-
-            # Overhangs are faces where angle > threshold (pointing too far down)
             threshold_angle = self.config.support_angle_threshold
             overhangs = np.where(angles_deg > threshold_angle)[0]
-
             logger.debug(
                 f"Identified {len(overhangs)} overhang faces at {threshold_angle}° threshold"
             )
-
             return overhangs
-
         except Exception as e:
             logger.warning(f"Overhang detection failed: {e}")
             return np.array([])
@@ -479,16 +327,6 @@ class SupportGenerator:
     def _group_supports(
         self, mesh: trimesh.Trimesh, overhang_indices: np.ndarray
     ) -> list:
-        """
-        Group overhanging faces into connected regions.
-
-        Args:
-            mesh: Input mesh
-            overhang_indices: Array of overhang face indices
-
-        Returns:
-            List of support region dictionaries
-        """
         try:
             regions = []
             processed = set()
@@ -497,12 +335,10 @@ class SupportGenerator:
                 if face_idx in processed:
                     continue
 
-                # Find connected component
                 region = self._find_connected_region(
                     mesh, face_idx, overhang_indices, processed
                 )
                 if len(region) > 0:
-                    # Calculate region centroid for support placement
                     region_faces = mesh.faces[list(region)]
                     region_verts = mesh.vertices[region_faces.flatten()]
                     centroid = region_verts.mean(axis=0)
@@ -530,18 +366,6 @@ class SupportGenerator:
         overhang_set: np.ndarray,
         processed: set,
     ) -> set:
-        """
-        Find connected component of overhanging faces using BFS.
-
-        Args:
-            mesh: Input mesh
-            start_face: Starting face index
-            overhang_set: Array of all overhang indices
-            processed: Set of already-processed faces
-
-        Returns:
-            Set of connected overhang face indices
-        """
         region = {start_face}
         queue = [start_face]
         overhang_set_fast = set(overhang_set)
@@ -550,7 +374,6 @@ class SupportGenerator:
             face_idx = queue.pop(0)
             face = mesh.faces[face_idx]
 
-            # Find adjacent faces
             for vertex_idx in face:
                 adjacent_faces = np.where((mesh.faces == vertex_idx).any(axis=1))[0]
                 for adj_face in adjacent_faces:
@@ -564,34 +387,20 @@ class SupportGenerator:
     def _create_support_columns(
         self, mesh: trimesh.Trimesh, support_regions: list
     ) -> trimesh.Trimesh:
-        """
-        Create minimal support columns from centroids to build platform.
-
-        Args:
-            mesh: Input mesh
-            support_regions: List of support region dictionaries
-
-        Returns:
-            Support mesh
-        """
         try:
             support_meshes = []
 
             for region in support_regions:
                 centroid = region["centroid"]
-                # Find height to build platform (mesh bottom)
                 z_min = mesh.bounds[0][2]
 
-                # Create support column
                 top = centroid
                 bottom = np.array([centroid[0], centroid[1], z_min])
 
-                # Create cylinder column
                 column = trimesh.creation.cylinder(
                     radius=self.config.support_diameter / 2,
                     height=top[2] - bottom[2],
                 )
-                # Position column
                 column.apply_translation(
                     bottom + np.array([0, 0, column.extents[2] / 2])
                 )
@@ -612,26 +421,14 @@ class SupportGenerator:
     def _add_raft(
         self, mesh: trimesh.Trimesh, support_mesh: Optional[trimesh.Trimesh]
     ) -> trimesh.Trimesh:
-        """
-        Add rectangular raft base for improved bed adhesion.
-
-        Args:
-            mesh: Original mesh
-            support_mesh: Existing support mesh
-
-        Returns:
-            Combined support + raft mesh
-        """
         try:
-            # Create raft base plate
             bounds = mesh.bounds
-            raft_x = bounds[1][0] - bounds[0][0] + 10  # 5mm margin each side
+            raft_x = bounds[1][0] - bounds[0][0] + 10
             raft_y = bounds[1][1] - bounds[0][1] + 10
             raft_height = self.config.base_thickness
 
             raft = trimesh.creation.box(extents=[raft_x, raft_y, raft_height])
 
-            # Position raft at mesh bottom
             z_min = bounds[0][2]
             raft.apply_translation(
                 [
@@ -654,38 +451,231 @@ class SupportGenerator:
             return support_mesh if support_mesh is not None else mesh
 
 
+class MeshOptimizer:
+    """Layer 2: universal mesh cleanup — debris removal, watertight repair, decimation, smoothing."""
+
+    ENGINE_FACE_TARGETS = {
+        "trellis":      100_000,
+        "meshroom":     200_000,
+        "hunyuan3d":     80_000,
+        "triposg":       60_000,
+        "sf3d":          60_000,
+        "spar3d":        60_000,
+        "instantmesh":   80_000,
+    }
+    DEFAULT_FACE_TARGET = 80_000
+
+    def optimize(self, mesh: trimesh.Trimesh, engine_name: str = "") -> trimesh.Trimesh:
+        target = self.ENGINE_FACE_TARGETS.get(engine_name, self.DEFAULT_FACE_TARGET)
+        mesh = self._keep_largest_component(mesh)
+        mesh = self._repair(mesh)
+        mesh = self._pymeshfix_watertight(mesh)
+        mesh = self._decimate(mesh, target)
+        mesh = self._smooth(mesh)
+        return mesh
+
+    def _keep_largest_component(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+        try:
+            components = mesh.split(only_watertight=False)
+            if len(components) <= 1:
+                return mesh
+            largest = max(components, key=lambda m: len(m.faces))
+            removed_faces = sum(len(m.faces) for m in components) - len(largest.faces)
+            logger.info(
+                f"Kept largest component ({len(largest.faces)} faces); "
+                f"removed {len(components)-1} debris pieces ({removed_faces} faces)"
+            )
+            return largest
+        except Exception as exc:
+            logger.warning(f"Component split failed ({exc}), keeping original")
+            return mesh
+
+    def _repair(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+        try:
+            mesh.fix_normals()
+            trimesh.repair.fill_holes(mesh)
+            mesh.merge_vertices()
+        except Exception as exc:
+            logger.warning(f"Basic repair partially failed ({exc})")
+        return mesh
+
+    def _pymeshfix_watertight(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+        try:
+            import pymeshfix
+            mf = pymeshfix.MeshFix(mesh.vertices, mesh.faces)
+            mf.repair()
+            repaired = trimesh.Trimesh(vertices=mf.v, faces=mf.f, process=False)
+            logger.info(
+                f"pymeshfix repair: {len(mesh.faces)} → {len(repaired.faces)} faces, "
+                f"watertight={repaired.is_watertight}"
+            )
+            return repaired
+        except ImportError:
+            logger.debug("pymeshfix not installed; using trimesh hole-fill fallback")
+            try:
+                trimesh.repair.fill_holes(mesh)
+            except Exception:
+                pass
+            return mesh
+        except Exception as exc:
+            logger.warning(f"pymeshfix failed ({exc}); keeping trimesh-repaired mesh")
+            return mesh
+
+    def _decimate(self, mesh: trimesh.Trimesh, target: int) -> trimesh.Trimesh:
+        current = len(mesh.faces)
+        if current <= target:
+            logger.info(f"No decimation needed ({current} faces ≤ target {target})")
+            return mesh
+        try:
+            import pyfqmr
+            simplifier = pyfqmr.Simplify()
+            simplifier.setMesh(mesh.vertices, mesh.faces)
+            simplifier.simplify_mesh(target_count=target, aggressiveness=7, verbose=False)
+            verts, faces, _ = simplifier.getMesh()
+            decimated = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+            logger.info(f"pyfqmr decimation: {current} → {len(decimated.faces)} faces")
+            return decimated
+        except ImportError:
+            logger.debug("pyfqmr not installed; using trimesh quadric decimation")
+        except Exception as exc:
+            logger.warning(f"pyfqmr decimation failed ({exc}); falling back to trimesh")
+
+        try:
+            ratio = target / current
+            decimated = mesh.simplify_quadric_decimation(ratio)
+            logger.info(
+                f"trimesh decimation: {current} → {len(decimated.faces)} faces"
+            )
+            return decimated
+        except Exception as exc:
+            logger.warning(f"trimesh decimation also failed ({exc}); keeping original")
+            return mesh
+
+    def _smooth(self, mesh: trimesh.Trimesh, iterations: int = 3) -> trimesh.Trimesh:
+        try:
+            smoothed = trimesh.smoothing.filter_laplacian(mesh, iterations=iterations)
+            logger.debug(f"Laplacian smoothing applied ({iterations} iterations)")
+            return smoothed
+        except Exception as exc:
+            logger.debug(f"Laplacian smoothing skipped ({exc})")
+            return mesh
+
+
+class PrintQualityValidator:
+    """Layer 4: validate mesh print-readiness and emit a structured report."""
+
+    def validate(self, mesh: trimesh.Trimesh, engine_name: str = "") -> dict:
+        try:
+            components = mesh.split(only_watertight=False)
+            n_components = len(components)
+        except Exception:
+            n_components = 1
+
+        watertight = bool(mesh.is_watertight)
+
+        try:
+            volume_mm3 = float(mesh.volume) if watertight else None
+        except Exception:
+            volume_mm3 = None
+
+        try:
+            dims = mesh.extents.tolist()
+        except Exception:
+            dims = None
+
+        try:
+            euler = int(mesh.euler_number)
+        except Exception:
+            euler = None
+
+        score = self._score(mesh, watertight, euler, n_components)
+        issues = self._issues(mesh, watertight, n_components)
+
+        report = {
+            "engine": engine_name,
+            "watertight": watertight,
+            "volume_mm3": volume_mm3,
+            "dimensions_mm": dims,
+            "faces": len(mesh.faces),
+            "vertices": len(mesh.vertices),
+            "components": n_components,
+            "euler_number": euler,
+            "print_score": score,
+            "issues": issues,
+        }
+
+        logger.info(
+            f"Print quality: score={score}/100, watertight={watertight}, "
+            f"faces={len(mesh.faces):,}, components={n_components}"
+        )
+        if issues:
+            for issue in issues:
+                logger.warning(f"  ⚠ {issue}")
+
+        return report
+
+    def _score(
+        self,
+        mesh: trimesh.Trimesh,
+        watertight: bool,
+        euler: Optional[int],
+        components: int,
+    ) -> int:
+        score = 100
+        if not watertight:
+            score -= 40
+        if euler is not None and euler != 2:
+            score -= 10
+        if components > 1:
+            score -= min(components - 1, 3) * 5
+        face_count = len(mesh.faces)
+        if face_count < 5_000:
+            score -= 20
+        elif face_count > 500_000:
+            score -= 10
+        return max(0, score)
+
+    def _issues(
+        self, mesh: trimesh.Trimesh, watertight: bool, components: int
+    ) -> list:
+        issues = []
+        if not watertight:
+            issues.append("Not watertight — will not slice cleanly")
+        if components > 1:
+            issues.append(f"{components} disconnected components — may need cleanup")
+        try:
+            if not mesh.is_volume:
+                issues.append("Non-manifold geometry detected")
+        except Exception:
+            pass
+        return issues
+
+
 class PostProcessingPipeline:
     """Orchestrates complete mesh post-processing pipeline."""
 
     def __init__(self, config: Optional[PostProcessingConfig] = None):
-        """
-        Initialize post-processing pipeline.
-
-        Args:
-            config: PostProcessingConfig instance (uses defaults if None)
-        """
         self.config = config or PostProcessingConfig()
         self.repair = MeshRepair(self.config)
         self.hollowing = MeshHollowing(self.config)
         self.supports = SupportGenerator(self.config)
+        self.optimizer = MeshOptimizer()
+        self.validator = PrintQualityValidator()
 
         logger.info("Initialized PostProcessingPipeline")
 
     def process_mesh(
-        self, mesh_path: str, output_path: Optional[str] = None
+        self,
+        mesh_path: str,
+        output_path: Optional[str] = None,
+        engine_name: str = "",
     ) -> Dict[str, Any]:
         """
-        Process mesh through complete pipeline: repair → hollow → supports → export.
-
-        Args:
-            mesh_path: Path to input mesh file
-            output_path: Optional output path (auto-generated if not provided)
-
-        Returns:
-            Dict with output paths and processing metadata
-
-        Raises:
-            ValueError: If processing fails
+        Process mesh through complete pipeline:
+          Layer 2: MeshOptimizer (debris, watertight, decimate, smooth)
+          Layer 3: Repair → hollow → supports
+          Layer 4: PrintQualityValidator → print_report.json
+          Export: final_mesh.glb + final_mesh.stl
         """
         logger.info(f"Processing mesh: {mesh_path}")
 
@@ -699,15 +689,24 @@ class PostProcessingPipeline:
                 f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
             )
 
-            # Stage 1: Repair
+            # Layer 2: MeshOptimizer — always-on
+            if self.config.enable_optimizer:
+                logger.info("Layer 2: MeshOptimizer")
+                target = self.config.target_face_count or 0
+                if target > 0:
+                    # Override per-engine target with explicit config value
+                    self.optimizer.ENGINE_FACE_TARGETS[engine_name] = target
+                mesh = self.optimizer.optimize(mesh, engine_name)
+
+            # Layer 3: Repair
             mesh = self.repair.repair_mesh(mesh)
 
-            # Stage 2: Hollow (optional)
+            # Layer 3: Hollow (optional)
             if self.config.hollow_enabled:
                 mesh = self.hollowing.hollow_mesh(mesh)
                 logger.info("Hollowing complete")
 
-            # Stage 3: Generate supports (optional)
+            # Layer 3: Generate supports (optional)
             support_result = None
             if self.config.generate_supports:
                 support_result = self.supports.generate_supports(mesh)
@@ -716,16 +715,26 @@ class PostProcessingPipeline:
             # Generate output path
             if output_path is None:
                 from datetime import datetime
-
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_path = f"output/postprocessed/{timestamp}_processed.{self.config.output_format}"
+                output_path = (
+                    f"output/postprocessed/{timestamp}_processed.{self.config.output_format}"
+                )
 
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Export final mesh
+            # Export final GLB
             mesh.export(str(output_path), file_type=self.config.output_format)
             logger.info(f"Exported processed mesh to {output_path}")
+
+            # Export STL alongside the GLB
+            stl_path = output_path.with_suffix(".stl")
+            try:
+                mesh.export(str(stl_path), file_type="stl")
+                logger.info(f"Exported STL to {stl_path}")
+            except Exception as exc:
+                logger.warning(f"STL export failed ({exc}); GLB still available")
+                stl_path = None
 
             # Export supports if generated
             support_path = None
@@ -734,19 +743,27 @@ class PostProcessingPipeline:
                 support_result["support_mesh"].export(str(support_path))
                 logger.info(f"Exported supports to {support_path}")
 
+            # Layer 4: PrintQualityValidator
+            logger.info("Layer 4: PrintQualityValidator")
+            print_report = self.validator.validate(mesh, engine_name)
+            report_path = output_path.parent / "print_report.json"
+            with open(report_path, "w") as f:
+                json.dump(print_report, f, indent=2)
+            logger.info(f"Saved print report to {report_path}")
+
             return {
                 "mesh_path": str(output_path),
+                "stl_path": str(stl_path) if stl_path else None,
                 "support_path": str(support_path) if support_path else None,
                 "vertices": len(mesh.vertices),
                 "faces": len(mesh.faces),
                 "has_supports": (
-                    support_result.get("has_supports", False)
-                    if support_result
-                    else False
+                    support_result.get("has_supports", False) if support_result else False
                 ),
                 "overhang_faces": (
                     support_result.get("overhang_faces", 0) if support_result else 0
                 ),
+                "print_report": print_report,
             }
 
         except Exception as e:

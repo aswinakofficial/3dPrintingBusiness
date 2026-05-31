@@ -134,6 +134,10 @@
         <!-- Sidebar -->
         <div class="w-64 flex flex-col gap-4">
           <div class="bg-gray-900 rounded-xl p-4">
+            <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Print Quality</p>
+            <div id="print-quality" class="text-sm space-y-2"></div>
+          </div>
+          <div class="bg-gray-900 rounded-xl p-4">
             <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Mesh Stats</p>
             <div id="mesh-stats" class="text-sm space-y-2"></div>
           </div>
@@ -144,6 +148,10 @@
           <a id="download-btn" href="#" download="model.glb"
             class="block text-center py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition">
             ⬇ Download GLB
+          </a>
+          <a id="download-stl-btn" href="#" download="model.stl"
+            class="block text-center py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition">
+            ⬇ Download STL
           </a>
           <button onclick="addToCompare(currentJobId)"
             class="py-2 bg-indigo-900 hover:bg-indigo-800 rounded-lg text-sm font-medium transition">

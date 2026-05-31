@@ -107,6 +107,7 @@ RUN grep -vE "^(torch(vision|audio)?|diffusers|huggingface.hub)[=<>!]" requireme
 # Re-enforce huggingface-hub<1.0: rembg/open3d installed above may have upgraded it.
 # diffusers==0.20.2 + transformers==4.34.1 both require huggingface-hub<1.0.
 RUN pip install --no-cache-dir "huggingface-hub>=0.22.0,<1.0"
+RUN pip install --no-cache-dir "pymeshfix" "pyfqmr"
 
 COPY config.yaml .
 COPY main.py .

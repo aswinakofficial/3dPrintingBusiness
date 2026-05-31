@@ -137,6 +137,7 @@ COPY requirements-runtime.txt .
 RUN grep -vE "^torch(vision)?[=<>!]" requirements-runtime.txt \
     > /tmp/req-no-torch.txt && \
     pip install --no-cache-dir -r /tmp/req-no-torch.txt
+RUN pip install --no-cache-dir "pymeshfix" "pyfqmr"
 
 # Copy app code last (best layer cache reuse on iteration)
 COPY config.yaml .

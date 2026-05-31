@@ -242,8 +242,36 @@ async function loadViewer(jobId) {
   const mv = document.getElementById('model-viewer-main');
   mv.src = `/outputs/${jobId}/mesh`;
 
-  // Download link
+  // Download links
   document.getElementById('download-btn').href = `/outputs/${jobId}/mesh`;
+  document.getElementById('download-stl-btn').href = `/outputs/${jobId}/stl`;
+
+  // Print quality badge
+  try {
+    const rpt = await fetch(`/outputs/${jobId}/print-report`).then(r => r.json());
+    const score = rpt.print_score ?? 0;
+    const scoreColor = score >= 80 ? 'text-green-400' : score >= 50 ? 'text-yellow-400' : 'text-red-400';
+    const wt = rpt.watertight ? '<span class="text-green-400">✓</span>' : '<span class="text-red-400">✗</span>';
+    const dims = rpt.dimensions_mm
+      ? rpt.dimensions_mm.map(d => `${(d/10).toFixed(1)}`).join(' × ') + ' cm'
+      : '—';
+    const vol = rpt.volume_mm3 != null
+      ? `${(rpt.volume_mm3 / 1000).toFixed(1)} cm³`
+      : '—';
+    const issueHtml = (rpt.issues || []).map(
+      i => `<p class="text-xs text-orange-400 mt-1">⚠ ${i}</p>`
+    ).join('');
+    document.getElementById('print-quality').innerHTML = `
+      <div class="flex justify-between"><span class="text-gray-500">Print Score</span><span class="${scoreColor} font-bold">${score}/100</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Watertight</span><span>${wt}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Dimensions</span><span class="text-xs">${dims}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Volume</span><span>${vol}</span></div>
+      ${issueHtml}
+    `;
+  } catch (_) {
+    document.getElementById('print-quality').innerHTML =
+      '<p class="text-xs text-gray-600">Report not available</p>';
+  }
 
   // Metadata
   try {

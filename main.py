@@ -436,7 +436,9 @@ class Pipeline:
             pipeline = PostProcessingPipeline(self.post_processing_config)
             output_mesh_path = str(self.session_dir / "final_mesh.glb")
 
-            results = pipeline.process_mesh(raw_mesh_path, output_mesh_path)
+            results = pipeline.process_mesh(
+                raw_mesh_path, output_mesh_path, engine_name=self.engine_name
+            )
 
             logger.info("✓ Mesh post-processing complete")
             logger.info(f"  Final mesh: {results['mesh_path']}")
@@ -666,16 +668,12 @@ Examples:
                 raise ValueError(f"No images found in {args.directory}")
             logger.info(f"Found {len(image_paths)} images in {args.directory}")
 
-        # Build post-processing config.
-        # All repair-intensive operations are gated on --repair so that the
-        # default (no flag) is a fast pass-through (no hole fill, no degenerate
-        # face removal) — important for voxel meshes from TRELLIS which are
-        # non-manifold by nature and trigger very slow validity checks.
         pp_config = PostProcessingConfig(
-            repair_non_manifold=args.repair,
-            remove_degenerate_faces=args.repair,
-            remove_infinite_values=args.repair,
-            max_hole_size=30 if args.repair else 0,
+            repair_non_manifold=True,
+            remove_degenerate_faces=True,
+            remove_infinite_values=True,
+            max_hole_size=30,
+            enable_optimizer=True,
             hollow_enabled=args.hollow,
             wall_thickness=args.wall_thickness,
             generate_supports=args.supports,
