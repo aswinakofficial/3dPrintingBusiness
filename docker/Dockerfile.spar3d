@@ -1,0 +1,104 @@
+# SPAR3D Engine Dockerfile — Stability AI Stable Point-Aware 3D (CVPR 2025)
+# Successor to SF3D: adds point-cloud conditioning for better backside geometry.
+# Model: stabilityai/stable-point-aware-3d (GATED — requires HF_TOKEN)
+#
+# The SPAR3D repo includes local packages (texture_baker/, uv_unwrapper/) that
+# must be installed from the cloned directory.
+
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+LABEL maintainer="3D Figurine Lab"
+LABEL description="SPAR3D single-image-to-textured-GLB engine (Stability AI)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TZ=UTC
+ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ENV HF_HOME=/workspace/.cache/huggingface
+# HF_TOKEN is injected at runtime by run_job.py / Container Apps env vars
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libjpeg-dev \
+    python3.10 \
+    python3-pip \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# PyTorch CUDA 12.1
+RUN pip install --no-cache-dir \
+    torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Clone stable-point-aware-3d and install with its local sub-packages.
+# Like SF3D, the repo has relative-path deps so clone-then-install is required.
+RUN git clone --depth 1 https://github.com/Stability-AI/stable-point-aware-3d /opt/spar3d
+
+# Install SPAR3D requirements (exclude torch to avoid CPU fallback install)
+RUN cd /opt/spar3d && \
+    grep -vE "^torch[^-]|^torchvision|^torchaudio" requirements.txt \
+    > /tmp/spar3d-req-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/spar3d-req-no-torch.txt
+
+# Install the spar3d package itself
+RUN pip install --no-cache-dir -e /opt/spar3d/
+
+# Background removal
+RUN pip install --no-cache-dir \
+    "rembg==2.0.65" \
+    "onnxruntime-gpu==1.16.3"
+
+# Extra mesh/image deps
+RUN pip install --no-cache-dir \
+    "trimesh==4.4.7" \
+    "pygltflib==1.16.3" \
+    pyyaml \
+    loguru \
+    rich \
+    scipy
+
+# Real-ESRGAN — used by maybe_upscale() in pre_processor.py to upscale small inputs
+RUN pip install --no-cache-dir "basicsr==1.4.2" "realesrgan==0.3.0"
+RUN python3 -c "from realesrgan import RealESRGANer; from basicsr.archs.rrdbnet_arch import RRDBNet; print('realesrgan OK')"
+
+COPY requirements-runtime.txt .
+RUN grep -vE "^torch(vision|audio)?[=<>!]" requirements-runtime.txt \
+    > /tmp/req-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/req-no-torch.txt
+
+COPY config.yaml .
+COPY main.py .
+COPY engines/ ./engines/
+COPY utils/ ./utils/
+COPY scripts/ ./scripts/
+COPY docker/entrypoint-spar3d.sh /app/entrypoint.sh
+
+RUN mkdir -p /app/input /app/output /app/logs && chmod +x /app/entrypoint.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD python3 -c "import torch; assert torch.cuda.is_available(); from spar3d.system import SPAR3D" || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python3", "main.py", "--help"]
