@@ -88,6 +88,7 @@ SUPPORTED_ENGINES = (
     "hunyuan3d",
     "triposg",
     "sf3d",
+    "spar3d",
     "instantmesh",
 )
 
@@ -99,6 +100,7 @@ CONTAINER_BASE_CONFIG = {
     "hunyuan3d": {"image_repo": "3dfigurine-hunyuan3d", "cpu": 8.0, "memory": "56Gi"},
     "triposg": {"image_repo": "3dfigurine-triposg", "cpu": 8.0, "memory": "56Gi"},
     "sf3d": {"image_repo": "3dfigurine-sf3d", "cpu": 8.0, "memory": "56Gi"},
+    "spar3d": {"image_repo": "3dfigurine-spar3d", "cpu": 8.0, "memory": "56Gi"},
     "instantmesh": {
         "image_repo": "3dfigurine-instantmesh",
         "cpu": 8.0,
@@ -202,6 +204,7 @@ ENGINE_IMAGE_LIMITS = {
     "hunyuan3d": (1, 6),
     "triposg": (1, 1),
     "sf3d": (1, 1),
+    "spar3d": (1, 1),
     "instantmesh": (1, 6),
 }
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}

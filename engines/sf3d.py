@@ -29,9 +29,9 @@ logger = get_logger()
 
 # Bake quality tiers, tried in order on OOM
 _BAKE_TIERS = [
-    {"bake_resolution": 2048, "remesh": "triangle", "label": "high"},
-    {"bake_resolution": 1024, "remesh": "triangle", "label": "med"},
-    {"bake_resolution": 512, "remesh": "triangle", "label": "low"},
+    {"bake_resolution": 2048, "remesh": "quad", "label": "high"},
+    {"bake_resolution": 1024, "remesh": "quad", "label": "med"},
+    {"bake_resolution": 512,  "remesh": "quad", "label": "low"},
 ]
 
 
@@ -94,7 +94,9 @@ class SF3DEngine(Engine):
             logger.warning(f"SF3D uses 1 image; got {len(validated)}, using first")
         path = validated[0]
 
-        img = ImagePreprocessor.load_image(path).convert("RGBA")
+        img = ImagePreprocessor.load_image(path)
+        img = ImagePreprocessor.maybe_upscale(img)
+        img = img.convert("RGBA")
 
         # Background removal — SF3D expects RGBA with alpha mask on subject
         try:
@@ -168,9 +170,22 @@ class SF3DEngine(Engine):
 
     def postprocess(self, infer_output: Any) -> str:
         """Export UV-textured GLB. SF3D textures are already baked — no separate paint step."""
+        import trimesh
+        import trimesh.repair
+
         mesh, timestamp = infer_output
         output_dir = Path("/app/output/sf3d")
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Mesh repair: fix winding and fill simple holes before export.
+        try:
+            mesh.fix_normals()
+            trimesh.repair.fill_holes(mesh)
+            logger.info(
+                f"Mesh repair done: {len(mesh.vertices):,}v {len(mesh.faces):,}f"
+            )
+        except Exception as exc:
+            logger.warning(f"Mesh repair skipped ({exc})")
 
         out_glb = output_dir / f"sf3d_{timestamp}.glb"
         mesh.export(str(out_glb))

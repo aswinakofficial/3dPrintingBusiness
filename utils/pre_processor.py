@@ -6,6 +6,7 @@ Supports flexible input for both TRELLIS.2 (1-4 images) and Meshroom (10-50+ ima
 from pathlib import Path
 from typing import Union, List, Optional
 
+import numpy as np
 from PIL import Image
 
 from utils.logger import get_logger
@@ -177,6 +178,65 @@ class ImagePreprocessor:
             return img
         except Exception as e:
             raise RuntimeError(f"Failed to load image {image_path}: {e}")
+
+    # Short-edge threshold below which Real-ESRGAN upscaling is applied
+    _UPSCALE_THRESHOLD_PX = 512
+
+    @staticmethod
+    def maybe_upscale(image: Image.Image) -> Image.Image:
+        """Upscale small images 4× with Real-ESRGAN before inference.
+
+        Skipped silently when the short edge already meets the threshold or when
+        realesrgan / basicsr are not installed in the container.
+        """
+        short = min(image.size)
+        if short >= ImagePreprocessor._UPSCALE_THRESHOLD_PX:
+            return image
+
+        try:
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from realesrgan import RealESRGANer
+
+            # Weights are at a well-known path in containers that ship them
+            # (Hunyuan3D has them at /opt/hunyuan3d-space/hy3dpaint/ckpt/);
+            # for other containers they are downloaded to HF_HOME cache.
+            _WEIGHT_CANDIDATES = [
+                "/opt/hunyuan3d-space/hy3dpaint/ckpt/RealESRGAN_x4plus.pth",
+                Path.home() / ".cache/realesrgan/RealESRGAN_x4plus.pth",
+            ]
+            weights_path = next(
+                (str(p) for p in _WEIGHT_CANDIDATES if Path(p).exists()), None
+            )
+            if weights_path is None:
+                # Download on first use — cached by realesrgan into HF_HOME
+                weights_path = "RealESRGAN_x4plus"
+
+            model = RRDBNet(
+                num_in_ch=3, num_out_ch=3, num_feat=64,
+                num_block=23, num_grow_ch=32, scale=4,
+            )
+            upsampler = RealESRGANer(
+                scale=4,
+                model_path=weights_path,
+                model=model,
+                tile=0,
+                tile_pad=10,
+                pre_pad=0,
+                half=True,
+            )
+            rgb = np.array(image.convert("RGB"))
+            out_rgb, _ = upsampler.enhance(rgb, outscale=4)
+            result = Image.fromarray(out_rgb)
+            logger.info(
+                f"Real-ESRGAN upscale: {image.size} → {result.size}"
+            )
+            return result
+        except ImportError:
+            logger.debug("realesrgan not installed, skipping upscale")
+            return image
+        except Exception as exc:
+            logger.warning(f"Real-ESRGAN upscale failed ({exc}), using original")
+            return image
 
     @staticmethod
     def remove_background(image: Image.Image, model_name: str = "u2net") -> Image.Image:

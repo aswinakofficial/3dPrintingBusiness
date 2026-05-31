@@ -124,7 +124,9 @@ class InstantMeshEngine(Engine):
 
         images = []
         for i, path in enumerate(validated, 1):
-            img = ImagePreprocessor.load_image(path).convert("RGBA")
+            img = ImagePreprocessor.load_image(path)
+            img = ImagePreprocessor.maybe_upscale(img)
+            img = img.convert("RGBA")
             try:
                 import rembg
 
@@ -319,6 +321,23 @@ class InstantMeshEngine(Engine):
 
         # Convert OBJ → GLB via trimesh
         scene = trimesh.load(str(obj_path), process=False)
+
+        # Repair each mesh component: fix winding and fill open holes
+        try:
+            import trimesh.repair
+            meshes = (
+                list(scene.geometry.values())
+                if isinstance(scene, trimesh.Scene)
+                else [scene]
+            )
+            for m in meshes:
+                if isinstance(m, trimesh.Trimesh):
+                    m.fix_normals()
+                    trimesh.repair.fill_holes(m)
+            logger.info("Mesh repair done")
+        except Exception as exc:
+            logger.warning(f"Mesh repair skipped ({exc})")
+
         scene.export(str(glb_path))
 
         logger.info(f"Exported GLB: {len(verts_np):,}v {len(faces_np):,}f → {glb_path}")

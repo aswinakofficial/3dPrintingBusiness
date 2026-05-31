@@ -54,6 +54,13 @@ ENGINE_META = {
         "desc": "Stability AI Stable Fast 3D. Sub-second inference, UV-unwrapped PBR textures. Sharpest colours.",
         "color": "teal",
     },
+    "spar3d": {
+        "label": "SPAR3D",
+        "min_images": 1,
+        "max_images": 1,
+        "desc": "Stability AI Stable Point-Aware 3D. Successor to SF3D — better backside geometry via point-cloud conditioning.",
+        "color": "cyan",
+    },
     "instantmesh": {
         "label": "InstantMesh",
         "min_images": 1,

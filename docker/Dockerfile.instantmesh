@@ -94,6 +94,10 @@ RUN pip install --no-cache-dir \
     "loguru" \
     "rich"
 
+# Real-ESRGAN — used by maybe_upscale() in pre_processor.py to upscale small inputs
+RUN pip install --no-cache-dir "basicsr==1.4.2" "realesrgan==0.3.0"
+RUN python3 -c "from realesrgan import RealESRGANer; from basicsr.archs.rrdbnet_arch import RRDBNet; print('realesrgan OK')"
+
 COPY requirements-runtime.txt .
 # Exclude torch*, diffusers, and huggingface-hub — all pinned above for Zero123++ compatibility
 RUN grep -vE "^(torch(vision|audio)?|diffusers|huggingface.hub)[=<>!]" requirements-runtime.txt \

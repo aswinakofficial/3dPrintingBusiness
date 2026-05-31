@@ -297,6 +297,7 @@ class Pipeline:
             "hunyuan3d": 6,
             "triposg": 1,
             "sf3d": 1,
+            "spar3d": 1,
             "instantmesh": 6,
         }.get(self.engine_name, 4)
         engine_config = EngineConfig(max_images=max_images)

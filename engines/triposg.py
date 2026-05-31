@@ -84,7 +84,9 @@ class TripoSGEngine(Engine):
             logger.warning(f"TripoSG uses 1 image; got {len(validated)}, using first")
         path = validated[0]
 
-        img = ImagePreprocessor.load_image(path).convert("RGBA")
+        img = ImagePreprocessor.load_image(path)
+        img = ImagePreprocessor.maybe_upscale(img)
+        img = img.convert("RGBA")
         try:
             import rembg
 
@@ -153,8 +155,9 @@ class TripoSGEngine(Engine):
         raise RuntimeError("TripoSG inference failed at all quality tiers")
 
     def postprocess(self, infer_output: Any) -> str:
-        """Apply Laplacian smoothing and export textured GLB."""
+        """Apply Laplacian smoothing, mesh repair, and export textured GLB."""
         import trimesh
+        import trimesh.repair
         import trimesh.smoothing
 
         mesh, timestamp = infer_output
@@ -174,6 +177,17 @@ class TripoSGEngine(Engine):
                 )
         except Exception as exc:
             logger.warning(f"Laplacian smoothing failed ({exc}), skipping")
+
+        # Mesh repair: fix winding normals and fill simple open holes
+        try:
+            if isinstance(mesh, trimesh.Trimesh):
+                mesh.fix_normals()
+                trimesh.repair.fill_holes(mesh)
+                logger.info(
+                    f"Mesh repair done: {len(mesh.vertices):,}v {len(mesh.faces):,}f"
+                )
+        except Exception as exc:
+            logger.warning(f"Mesh repair skipped ({exc})")
 
         out_glb = output_dir / f"triposg_{timestamp}.glb"
         mesh.export(str(out_glb))

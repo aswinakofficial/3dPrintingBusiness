@@ -26,6 +26,21 @@
     <p class="text-sm text-gray-400 mb-3 uppercase tracking-wider font-semibold">Select Engine</p>
     <div class="grid grid-cols-3 gap-4 mb-8" id="engine-cards"></div>
 
+    <!-- Meshroom capture tips (shown only when Meshroom is selected) -->
+    <div id="meshroom-tips" class="hidden mb-6 bg-gray-900 border border-green-900 rounded-xl p-5">
+      <p class="text-sm font-semibold text-green-400 mb-3">📸 Capture Checklist for Photogrammetry</p>
+      <ul class="text-xs text-gray-400 space-y-1.5 list-none">
+        <li>✓ <strong class="text-gray-300">60+ photos</strong> — shoot a complete turntable, top, and bottom passes</li>
+        <li>✓ <strong class="text-gray-300">60 %+ overlap</strong> between adjacent frames (80 % frontal)</li>
+        <li>✓ <strong class="text-gray-300">Diffuse light</strong> — overcast outdoors or multiple soft indoor lights; no flash</li>
+        <li>✓ <strong class="text-gray-300">Lock exposure + white balance</strong> — disable auto in camera settings</li>
+        <li>✓ <strong class="text-gray-300">f/8–f/11 aperture</strong> for maximum depth of field; use ISO 100–400</li>
+        <li>✓ <strong class="text-gray-300">Fixed focal length</strong> — avoid zoom during the shoot</li>
+        <li>✓ <strong class="text-gray-300">Matte spray</strong> on reflective/glossy surfaces before capture</li>
+        <li>✓ <strong class="text-gray-300">Textured background mat</strong> under the object — plain white surfaces fail feature matching</li>
+      </ul>
+    </div>
+
     <!-- Upload zone -->
     <p class="text-sm text-gray-400 mb-3 uppercase tracking-wider font-semibold">Upload Images</p>
     <div id="drop-zone"
@@ -152,6 +167,7 @@
           <option value="hunyuan3d">Hunyuan3D</option>
           <option value="triposg">TripoSG</option>
           <option value="sf3d">SF3D</option>
+          <option value="spar3d">SPAR3D</option>
           <option value="instantmesh">InstantMesh</option>
         </select>
         <select id="filter-status" onchange="renderHistory()" class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm">

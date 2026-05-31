@@ -172,7 +172,9 @@ class Hunyuan3DEngine(Engine):
 
         images = []
         for path in validated:
-            img = ImagePreprocessor.load_image(path).convert("RGBA")
+            img = ImagePreprocessor.load_image(path)
+            img = ImagePreprocessor.maybe_upscale(img)
+            img = img.convert("RGBA")
             try:
                 import rembg
 

@@ -9,7 +9,7 @@ let statusPollTimer = null;
 let allJobs = [];
 let compareList = []; // [{job_id, engine}]
 
-const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple', triposg: 'orange', sf3d: 'teal', instantmesh: 'yellow' };
+const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple', triposg: 'orange', sf3d: 'teal', spar3d: 'cyan', instantmesh: 'yellow' };
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(name) {
@@ -48,6 +48,7 @@ async function initEngines() {
     }
     updateImageHint();
     document.getElementById('generate-views-row')?.classList.toggle('hidden', selectedEngine !== 'hunyuan3d');
+    document.getElementById('meshroom-tips')?.classList.toggle('hidden', selectedEngine !== 'meshroom');
   } catch (e) {
     grid.innerHTML = `<p class="text-red-400 text-sm col-span-full">Failed to load engines: ${e.message}</p>`;
   }
@@ -55,12 +56,13 @@ async function initEngines() {
 
 function selectEngine(key, col) {
   document.querySelectorAll('.engine-card').forEach(c => {
-    c.classList.remove('selected', 'blue', 'green', 'purple', 'orange', 'teal', 'yellow');
+    c.classList.remove('selected', 'blue', 'green', 'purple', 'orange', 'teal', 'cyan', 'yellow');
   });
   const card = document.getElementById(`engine-card-${key}`);
   card?.classList.add('selected', col || ENGINE_COLORS[key] || 'blue');
   selectedEngine = key;
   document.getElementById('generate-views-row')?.classList.toggle('hidden', key !== 'hunyuan3d');
+  document.getElementById('meshroom-tips')?.classList.toggle('hidden', key !== 'meshroom');
   updateImageHint();
 }
 
@@ -106,7 +108,7 @@ function updateImageHint() {
   if (!selected) return;
   const key = selectedEngine;
   // Fetch limits from DOM label text (or use hardcoded fallback)
-  const limits = { trellis:[1,4], meshroom:[10,50], hunyuan3d:[1,6], triposg:[1,1], sf3d:[1,1], instantmesh:[1,6] };
+  const limits = { trellis:[1,4], meshroom:[10,50], hunyuan3d:[1,6], triposg:[1,1], sf3d:[1,1], spar3d:[1,1], instantmesh:[1,6] };
   const [lo, hi] = limits[key] || [1, 10];
   const n = uploadedFiles.length;
   if (n === 0) {

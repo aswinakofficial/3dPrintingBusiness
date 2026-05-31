@@ -10,6 +10,7 @@ from engines.meshroom_sfm import MeshroomEngine
 from engines.hunyuan3d import Hunyuan3DEngine
 from engines.triposg import TripoSGEngine
 from engines.sf3d import SF3DEngine
+from engines.spar3d import SPAR3DEngine
 from engines.instantmesh import InstantMeshEngine
 from utils.logger import get_logger
 
@@ -23,6 +24,7 @@ ENGINE_REGISTRY: Dict[str, Type[Engine]] = {
     "hunyuan3d": Hunyuan3DEngine,
     "triposg": TripoSGEngine,
     "sf3d": SF3DEngine,
+    "spar3d": SPAR3DEngine,
     "instantmesh": InstantMeshEngine,
 }
 

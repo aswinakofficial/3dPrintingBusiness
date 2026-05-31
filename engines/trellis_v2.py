@@ -121,6 +121,7 @@ class TRELLIS2Engine(Engine):
         images = []
         for path in validated:
             img = ImagePreprocessor.load_image(path)
+            img = ImagePreprocessor.maybe_upscale(img)
             images.append(img)
         logger.info(f"Preprocessed {len(images)} image(s)")
         return images
@@ -155,10 +156,10 @@ class TRELLIS2Engine(Engine):
         try:
             import rembg as _rembg
 
-            _session = _rembg.new_session("u2net")
+            _session = _rembg.new_session("birefnet-general")
             image = _rembg.remove(image, session=_session)
             logger.info(
-                f"Background removed (rembg/u2net); image is now {image.mode} "
+                f"Background removed (rembg/birefnet-general); image is now {image.mode} "
                 f"{image.size[0]}x{image.size[1]}"
             )
         except Exception as _bg_err:
@@ -245,7 +246,7 @@ class TRELLIS2Engine(Engine):
         try:
             logger.info(
                 "Running to_glb() — DC remesh capped at 512^3, "
-                "decimation_target=300K, texture_size=1024"
+                "decimation_target=300K, texture_size=2048"
             )
             t0 = time.time()
             glb = o_voxel.postprocess.to_glb(
@@ -257,7 +258,7 @@ class TRELLIS2Engine(Engine):
                 voxel_size=raw_mesh.voxel_size,
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
                 decimation_target=300_000,
-                texture_size=1024,
+                texture_size=2048,
                 remesh=True,
                 remesh_band=1,
                 remesh_project=0,
@@ -286,6 +287,15 @@ class TRELLIS2Engine(Engine):
         verts[:, 1], verts[:, 2] = verts[:, 2].copy(), -verts[:, 1].copy()
         faces = face_t.cpu().numpy().astype(np.int32)
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+        # Repair: fix winding and fill holes before export
+        try:
+            import trimesh.repair
+            mesh.fix_normals()
+            trimesh.repair.fill_holes(mesh)
+        except Exception as _rep_err:
+            logger.warning(f"Mesh repair skipped ({_rep_err})")
+
         mesh.export(str(output_file))
         logger.info(
             f"Exported GLB (fallback): {len(mesh.vertices):,} v, "
