@@ -173,7 +173,7 @@ class SF3DEngine(Engine):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         out_glb = output_dir / f"sf3d_{timestamp}.glb"
-        mesh.export(str(out_glb), include_normals=True)
+        mesh.export(str(out_glb))
         logger.info(
             f"Exported GLB: {len(mesh.vertices):,}v {len(mesh.faces):,}f → {out_glb}"
         )

@@ -13,6 +13,7 @@ const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple',
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(name) {
+  clearTimeout(statusPollTimer);
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById(`view-${name}`)?.classList.remove('hidden');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -24,26 +25,32 @@ function showView(name) {
 
 // ── Engine cards ──────────────────────────────────────────────────────────────
 async function initEngines() {
-  const res = await fetch('/engines');
-  const engines = await res.json();
   const grid = document.getElementById('engine-cards');
-  grid.innerHTML = '';
-  for (const [key, meta] of Object.entries(engines)) {
-    const col = meta.color;
-    const card = document.createElement('div');
-    card.className = `engine-card bg-gray-900 rounded-xl p-4 ${key === selectedEngine ? 'selected ' + col : ''}`;
-    card.id = `engine-card-${key}`;
-    card.innerHTML = `
-      <div class="flex items-center gap-2 mb-2">
-        <span class="text-xs font-semibold px-2 py-0.5 rounded engine-badge-${col}">${meta.label}</span>
-      </div>
-      <p class="text-xs text-gray-400 leading-relaxed">${meta.desc}</p>
-      <p class="text-xs text-gray-600 mt-2">${meta.min_images}–${meta.max_images} image${meta.max_images > 1 ? 's' : ''}</p>
-    `;
-    card.addEventListener('click', () => selectEngine(key, col));
-    grid.appendChild(card);
+  try {
+    const res = await fetch('/engines');
+    if (!res.ok) throw new Error(`/engines returned ${res.status}`);
+    const engines = await res.json();
+    grid.innerHTML = '';
+    for (const [key, meta] of Object.entries(engines)) {
+      const col = meta.color;
+      const card = document.createElement('div');
+      card.className = `engine-card bg-gray-900 rounded-xl p-4 ${key === selectedEngine ? 'selected ' + col : ''}`;
+      card.id = `engine-card-${key}`;
+      card.innerHTML = `
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xs font-semibold px-2 py-0.5 rounded engine-badge-${col}">${meta.label}</span>
+        </div>
+        <p class="text-xs text-gray-400 leading-relaxed">${meta.desc}</p>
+        <p class="text-xs text-gray-600 mt-2">${meta.min_images}–${meta.max_images} image${meta.max_images > 1 ? 's' : ''}</p>
+      `;
+      card.addEventListener('click', () => selectEngine(key, col));
+      grid.appendChild(card);
+    }
+    updateImageHint();
+    document.getElementById('generate-views-row')?.classList.toggle('hidden', selectedEngine !== 'hunyuan3d');
+  } catch (e) {
+    grid.innerHTML = `<p class="text-red-400 text-sm col-span-full">Failed to load engines: ${e.message}</p>`;
   }
-  updateImageHint();
 }
 
 function selectEngine(key, col) {
@@ -53,6 +60,7 @@ function selectEngine(key, col) {
   const card = document.getElementById(`engine-card-${key}`);
   card?.classList.add('selected', col || ENGINE_COLORS[key] || 'blue');
   selectedEngine = key;
+  document.getElementById('generate-views-row')?.classList.toggle('hidden', key !== 'hunyuan3d');
   updateImageHint();
 }
 
@@ -98,7 +106,7 @@ function updateImageHint() {
   if (!selected) return;
   const key = selectedEngine;
   // Fetch limits from DOM label text (or use hardcoded fallback)
-  const limits = { trellis: [1,4], meshroom: [10,50], hunyuan3d: [1,6] };
+  const limits = { trellis:[1,4], meshroom:[10,50], hunyuan3d:[1,6], triposg:[1,1], sf3d:[1,1], instantmesh:[1,6] };
   const [lo, hi] = limits[key] || [1, 10];
   const n = uploadedFiles.length;
   if (n === 0) {

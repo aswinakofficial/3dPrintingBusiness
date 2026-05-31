@@ -57,7 +57,7 @@ required_packages = [
     ('scipy', 'SciPy'),
     ('trimesh', 'Trimesh'),
     ('PIL', 'Pillow'),
-    ('opencv', 'OpenCV'),
+    ('cv2', 'OpenCV'),
     ('rembg', 'rembg'),
 ]
 

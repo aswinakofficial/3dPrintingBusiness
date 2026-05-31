@@ -291,9 +291,14 @@ class Pipeline:
         """
         logger.info(f"Loading engine: {self.engine_name}")
 
-        max_images = {"trellis": 4, "meshroom": 50, "hunyuan3d": 6}.get(
-            self.engine_name, 4
-        )
+        max_images = {
+            "trellis": 4,
+            "meshroom": 50,
+            "hunyuan3d": 6,
+            "triposg": 1,
+            "sf3d": 1,
+            "instantmesh": 6,
+        }.get(self.engine_name, 4)
         engine_config = EngineConfig(max_images=max_images)
 
         engine = load_engine(self.engine_name, engine_config)
