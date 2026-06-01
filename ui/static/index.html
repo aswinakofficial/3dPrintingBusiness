@@ -22,9 +22,41 @@
   <div id="view-submit" class="view max-w-4xl mx-auto px-6 py-8">
     <h1 class="text-2xl font-bold mb-6">New Job</h1>
 
+    <!-- Quick Pick wizard -->
+    <div class="mb-6 bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <p class="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-3">Quick Pick</p>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="applyRecommendation('quality-single')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-orange-900 hover:text-orange-300 border border-gray-700 hover:border-orange-700 transition">
+          📸 1 photo, best quality
+        </button>
+        <button onclick="applyRecommendation('fast-single')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-teal-900 hover:text-teal-300 border border-gray-700 hover:border-teal-700 transition">
+          ⚡ 1 photo, fastest
+        </button>
+        <button onclick="applyRecommendation('multi-view')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-yellow-900 hover:text-yellow-300 border border-gray-700 hover:border-yellow-700 transition">
+          🖼 Multi-view (2–6 photos)
+        </button>
+        <button onclick="applyRecommendation('with-textures')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-purple-900 hover:text-purple-300 border border-gray-700 hover:border-purple-700 transition">
+          🎨 PBR textures
+        </button>
+        <button onclick="applyRecommendation('real-scan')"
+          class="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-green-900 hover:text-green-300 border border-gray-700 hover:border-green-700 transition">
+          📷 Real scan (50+ photos)
+        </button>
+      </div>
+    </div>
+
     <!-- Engine selector -->
     <p class="text-sm text-gray-400 mb-3 uppercase tracking-wider font-semibold">Select Engine</p>
-    <div class="grid grid-cols-3 gap-4 mb-8" id="engine-cards"></div>
+    <div class="grid grid-cols-3 gap-4 mb-4" id="engine-cards"></div>
+
+    <!-- Auto-suggest banner (hidden by default) -->
+    <div id="engine-suggest-banner"
+      class="hidden mb-4 text-sm bg-yellow-950 border border-yellow-800 rounded-lg px-4 py-2 flex items-center gap-1">
+    </div>
 
     <!-- Meshroom capture tips (shown only when Meshroom is selected) -->
     <div id="meshroom-tips" class="hidden mb-6 bg-gray-900 border border-green-900 rounded-xl p-5">
@@ -169,7 +201,25 @@
         </div>
       </div>
     </div>
+
+    <!-- Error summary -->
     <p id="status-error" class="text-red-400 text-sm hidden mt-4"></p>
+
+    <!-- Failure panel: log + retry -->
+    <div id="failure-panel" class="hidden mt-4 bg-gray-900 border border-red-900 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-3">
+        <p class="text-sm font-semibold text-red-400">Container Log (last 4 KB)</p>
+        <button onclick="showView('submit')"
+          class="text-xs px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded-lg transition">
+          ↩ Try a different engine
+        </button>
+      </div>
+      <details>
+        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 mb-2">Show / hide log</summary>
+        <pre id="failure-log"
+          class="text-xs text-gray-400 bg-gray-950 rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap break-all mt-2"></pre>
+      </details>
+    </div>
   </div>
 
   <!-- History View -->

@@ -5,15 +5,31 @@ let selectedEngine = 'hunyuan3d';
 let selectedGpu = 'A100';
 let uploadedFiles = [];
 let currentJobId = null;
-let statusPollTimer = null;
+let statusEventSource = null;
 let allJobs = [];
 let compareList = []; // [{job_id, engine}]
 
 const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple', triposg: 'orange', sf3d: 'teal', spar3d: 'cyan', instantmesh: 'yellow' };
 
+const RECOMMENDATIONS = {
+  'quality-single':  'triposg',
+  'fast-single':     'sf3d',
+  'multi-view':      'instantmesh',
+  'with-textures':   'hunyuan3d',
+  'real-scan':       'meshroom',
+};
+
+const QUICKPICK_LABELS = {
+  'quality-single':  '📸 1 photo, best quality',
+  'fast-single':     '⚡ 1 photo, fastest',
+  'multi-view':      '🖼 Multi-view (2–6 photos)',
+  'with-textures':   '🎨 PBR textures',
+  'real-scan':       '📷 Real scan (50+ photos)',
+};
+
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(name) {
-  clearTimeout(statusPollTimer);
+  if (statusEventSource) { statusEventSource.close(); statusEventSource = null; }
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
   document.getElementById(`view-${name}`)?.classList.remove('hidden');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -60,10 +76,16 @@ function selectEngine(key, col) {
   });
   const card = document.getElementById(`engine-card-${key}`);
   card?.classList.add('selected', col || ENGINE_COLORS[key] || 'blue');
+  card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   selectedEngine = key;
   document.getElementById('generate-views-row')?.classList.toggle('hidden', key !== 'hunyuan3d');
   document.getElementById('meshroom-tips')?.classList.toggle('hidden', key !== 'meshroom');
   updateImageHint();
+}
+
+function applyRecommendation(pick) {
+  const key = RECOMMENDATIONS[pick];
+  if (key) selectEngine(key, ENGINE_COLORS[key]);
 }
 
 // ── Image upload ──────────────────────────────────────────────────────────────
@@ -78,12 +100,14 @@ function addFiles(fileList) {
   }
   renderThumbs();
   updateImageHint();
+  suggestEngine();
 }
 
 function removeFile(idx) {
   uploadedFiles.splice(idx, 1);
   renderThumbs();
   updateImageHint();
+  suggestEngine();
 }
 
 function renderThumbs() {
@@ -102,20 +126,42 @@ function renderThumbs() {
   });
 }
 
+function suggestEngine() {
+  const banner = document.getElementById('engine-suggest-banner');
+  const n = uploadedFiles.length;
+  if (!banner) return;
+
+  let suggestion = null;
+  if (n === 1) suggestion = { key: 'triposg', label: 'TripoSG (best single-image quality)' };
+  else if (n >= 2 && n <= 6) suggestion = { key: 'instantmesh', label: 'InstantMesh (multi-view)' };
+  else if (n >= 10) suggestion = { key: 'meshroom', label: 'Meshroom (photogrammetry scan)' };
+
+  if (suggestion && suggestion.key !== selectedEngine) {
+    banner.innerHTML = `
+      <span class="text-yellow-300">💡 ${n} image${n>1?'s':''} uploaded —</span>
+      <button onclick="selectEngine('${suggestion.key}','${ENGINE_COLORS[suggestion.key]}');document.getElementById('engine-suggest-banner').classList.add('hidden')"
+        class="underline text-yellow-200 hover:text-white ml-1">
+        switch to ${suggestion.label}
+      </button>
+      <button onclick="document.getElementById('engine-suggest-banner').classList.add('hidden')"
+        class="ml-3 text-gray-500 hover:text-white">✕</button>
+    `;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
 function updateImageHint() {
   const el = document.getElementById('image-hint');
-  const selected = document.querySelector(`.engine-card.selected`);
-  if (!selected) return;
-  const key = selectedEngine;
-  // Fetch limits from DOM label text (or use hardcoded fallback)
   const limits = { trellis:[1,4], meshroom:[10,50], hunyuan3d:[1,6], triposg:[1,1], sf3d:[1,1], spar3d:[1,1], instantmesh:[1,6] };
-  const [lo, hi] = limits[key] || [1, 10];
+  const [lo, hi] = limits[selectedEngine] || [1, 10];
   const n = uploadedFiles.length;
   if (n === 0) {
-    el.textContent = `Upload ${lo}–${hi} images for ${key}`;
+    el.textContent = `Upload ${lo}–${hi} images for ${selectedEngine}`;
     el.className = 'text-xs text-gray-500 mb-4';
   } else if (n < lo || n > hi) {
-    el.textContent = `⚠ ${key} needs ${lo}–${hi} images (you have ${n})`;
+    el.textContent = `⚠ ${selectedEngine} needs ${lo}–${hi} images (you have ${n})`;
     el.className = 'text-xs text-orange-400 mb-4';
   } else {
     el.textContent = `✓ ${n} image${n>1?'s':''} ready`;
@@ -188,7 +234,7 @@ function showError(el, msg) {
 // ── Status view ───────────────────────────────────────────────────────────────
 function openStatusView(jobId, engine) {
   currentJobId = jobId;
-  clearInterval(statusPollTimer);
+  if (statusEventSource) { statusEventSource.close(); statusEventSource = null; }
 
   document.getElementById('status-job-id').textContent = jobId;
   document.getElementById('status-engine').textContent = engine || '—';
@@ -196,37 +242,83 @@ function openStatusView(jobId, engine) {
   document.getElementById('status-elapsed').textContent = '—';
   document.getElementById('viewer-section').classList.add('hidden');
   document.getElementById('status-error').classList.add('hidden');
+  document.getElementById('failure-panel')?.classList.add('hidden');
 
   showView('status');
-  pollStatus(jobId);
+  streamStatus(jobId);
 }
 
-async function pollStatus(jobId) {
-  try {
-    const res = await fetch(`/jobs/${jobId}/status`);
-    if (!res.ok) return;
-    const data = await res.json();
+function streamStatus(jobId) {
+  if (statusEventSource) { statusEventSource.close(); }
+
+  const es = new EventSource(`/jobs/${jobId}/stream`);
+  statusEventSource = es;
+
+  es.onmessage = async (evt) => {
+    let data;
+    try { data = JSON.parse(evt.data); } catch { return; }
 
     setStatusBadge(data.status);
-    if (data.elapsed_s !== null && data.elapsed_s !== undefined) {
+    if (data.elapsed_s != null) {
       const m = Math.floor(data.elapsed_s / 60);
       const s = data.elapsed_s % 60;
       document.getElementById('status-elapsed').textContent = m ? `${m}m ${s}s` : `${s}s`;
     }
 
     if (data.status === 'succeeded') {
+      es.close();
+      statusEventSource = null;
       await loadViewer(jobId);
-      return;
+    } else if (data.status === 'failed') {
+      es.close();
+      statusEventSource = null;
+      await showFailure(jobId, data.error);
     }
-    if (data.status === 'failed') {
-      const errEl = document.getElementById('status-error');
-      errEl.textContent = data.error || 'Job failed.';
-      errEl.classList.remove('hidden');
-      return;
+  };
+
+  es.onerror = () => {
+    es.close();
+    statusEventSource = null;
+    // Fall back to single poll after SSE error
+    setTimeout(() => pollStatusOnce(jobId), 5000);
+  };
+}
+
+async function pollStatusOnce(jobId) {
+  try {
+    const res = await fetch(`/jobs/${jobId}/status`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setStatusBadge(data.status);
+    if (data.status === 'succeeded') {
+      await loadViewer(jobId);
+    } else if (data.status === 'failed') {
+      await showFailure(jobId, data.error);
+    } else {
+      setTimeout(() => pollStatusOnce(jobId), 5000);
+    }
+  } catch (_) {
+    setTimeout(() => pollStatusOnce(jobId), 10000);
+  }
+}
+
+async function showFailure(jobId, errorSummary) {
+  const errEl = document.getElementById('status-error');
+  errEl.textContent = errorSummary || 'Job failed.';
+  errEl.classList.remove('hidden');
+
+  const panel = document.getElementById('failure-panel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/jobs/${jobId}/log`);
+    if (res.ok) {
+      const { log } = await res.json();
+      const pre = document.getElementById('failure-log');
+      if (pre) pre.textContent = log;
     }
   } catch (_) {}
-
-  statusPollTimer = setTimeout(() => pollStatus(jobId), 3000);
 }
 
 function setStatusBadge(status) {
@@ -239,11 +331,9 @@ async function loadViewer(jobId) {
   const section = document.getElementById('viewer-section');
   section.classList.remove('hidden');
 
-  // Load 3D model
   const mv = document.getElementById('model-viewer-main');
   mv.src = `/outputs/${jobId}/mesh`;
 
-  // Download links
   document.getElementById('download-btn').href = `/outputs/${jobId}/mesh`;
   document.getElementById('download-stl-btn').href = `/outputs/${jobId}/stl`;
 
@@ -360,8 +450,10 @@ function openJob(jobId, engine, status) {
     setStatusBadge(status);
     document.getElementById('viewer-section').classList.add('hidden');
     document.getElementById('status-error').classList.add('hidden');
+    document.getElementById('failure-panel')?.classList.add('hidden');
     showView('status');
     if (status === 'succeeded') loadViewer(jobId);
+    if (status === 'failed') showFailure(jobId, null);
   }
 }
 

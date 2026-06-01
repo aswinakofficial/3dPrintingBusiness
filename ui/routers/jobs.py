@@ -1,10 +1,13 @@
 """Job submission and status tracking endpoints."""
+import asyncio
+import json
 import sys
 import time
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 # Add project root to path so scripts.run_job is importable
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -12,11 +15,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from scripts.run_job import submit_job  # noqa: E402
+from ui import db  # noqa: E402
 
 router = APIRouter()
-
-# In-memory job registry: job_id → state dict
-_jobs: dict[str, dict] = {}
 
 ENGINE_META = {
     "trellis": {
@@ -101,14 +102,13 @@ async def create_job(
     input_dir = _PROJECT_ROOT / "input" / job_id
     input_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save uploaded images
     for i, upload in enumerate(images, 1):
         suffix = Path(upload.filename).suffix.lower() or ".jpg"
         dest = input_dir / f"{i}{suffix}"
         content = await upload.read()
         dest.write_bytes(content)
 
-    _jobs[job_id] = {
+    job = {
         "job_id": job_id,
         "engine": engine,
         "gpu_sku": gpu_sku,
@@ -120,6 +120,7 @@ async def create_job(
         "error": None,
         "image_count": len(images),
     }
+    db.upsert_job(job)
 
     use_generate_views = generate_views.lower() in ("true", "1", "yes")
     background_tasks.add_task(
@@ -145,8 +146,9 @@ def _run_job(
     generate_views: bool = False,
     target_height_mm: float = 100.0,
 ) -> None:
-    _jobs[job_id]["status"] = "running"
-    _jobs[job_id]["started_at"] = time.time()
+    job = db.get_job(job_id) or {}
+    job.update({"job_id": job_id, "status": "running", "started_at": time.time()})
+    db.upsert_job(job)
     try:
         result = submit_job(
             engine=engine,
@@ -158,59 +160,65 @@ def _run_job(
             generate_views=generate_views,
             target_height_mm=target_height_mm,
         )
-        _jobs[job_id]["status"] = "succeeded" if result.success else "failed"
-        _jobs[job_id]["output_dir"] = (
-            str(result.output_dir) if result.output_dir else None
-        )
+        job = db.get_job(job_id) or job
+        job["status"] = "succeeded" if result.success else "failed"
+        job["output_dir"] = str(result.output_dir) if result.output_dir else None
+
+        # Capture last 10 log lines into error field on failure
+        if not result.success:
+            log_path = next(
+                (_PROJECT_ROOT / "output" / job_id).rglob("container.log"), None
+            )
+            if log_path and log_path.exists():
+                lines = log_path.read_text(errors="replace").splitlines()
+                job["error"] = "\n".join(lines[-10:])
     except Exception as exc:
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["error"] = str(exc)
+        job = db.get_job(job_id) or job
+        job["status"] = "failed"
+        job["error"] = str(exc)
     finally:
-        _jobs[job_id]["finished_at"] = time.time()
+        job["finished_at"] = time.time()
+        db.upsert_job(job)
 
 
 @router.get("/jobs")
 def list_jobs(limit: int = 100):
-    """Return in-memory jobs merged with completed jobs scanned from output/."""
-    output_root = _PROJECT_ROOT / "output"
-    seen = set(_jobs.keys())
-    merged = list(_jobs.values())
+    """Return DB jobs merged with any output dirs the DB doesn't know about."""
+    db_jobs = db.list_jobs(limit)
+    seen = {j["job_id"] for j in db_jobs}
 
+    output_root = _PROJECT_ROOT / "output"
+    extra = []
     if output_root.exists():
         for job_dir in sorted(output_root.iterdir(), reverse=True):
-            if job_dir.name in seen or not job_dir.is_dir():
+            if job_dir.name.startswith(".") or job_dir.name in seen or not job_dir.is_dir():
                 continue
-            # Infer engine from directory name prefix
             engine = job_dir.name.split("-")[0] if "-" in job_dir.name else "unknown"
             glb = next(job_dir.rglob("final_mesh.glb"), None)
-            meta_file = next(job_dir.rglob("metadata.json"), None)
             created_ts = job_dir.stat().st_mtime
-            merged.append(
+            extra.append(
                 {
                     "job_id": job_dir.name,
                     "engine": engine,
+                    "gpu_sku": None,
                     "status": "succeeded" if glb else "failed",
                     "created_at": created_ts,
                     "started_at": None,
                     "finished_at": created_ts,
                     "output_dir": str(job_dir),
-                    "has_mesh": glb is not None,
-                    "has_metadata": meta_file is not None,
-                    "image_count": None,
-                    "gpu_sku": None,
                     "error": None,
+                    "image_count": None,
                 }
             )
             seen.add(job_dir.name)
 
-    # Annotate in-memory jobs with mesh availability
+    merged = db_jobs + extra
+
+    # Annotate mesh availability
     for j in merged:
-        if "has_mesh" not in j:
+        if "has_mesh" not in j or j["has_mesh"] is None:
             out = j.get("output_dir")
-            if out:
-                j["has_mesh"] = bool(list(Path(out).rglob("final_mesh.glb")))
-            else:
-                j["has_mesh"] = False
+            j["has_mesh"] = bool(out and list(Path(out).rglob("final_mesh.glb")))
 
     merged.sort(key=lambda j: j.get("created_at") or 0, reverse=True)
     return merged[:limit]
@@ -218,9 +226,8 @@ def list_jobs(limit: int = 100):
 
 @router.get("/jobs/{job_id}/status")
 def job_status(job_id: str):
-    job = _jobs.get(job_id)
+    job = db.get_job(job_id)
     if not job:
-        # Try to infer from output directory
         output_root = _PROJECT_ROOT / "output" / job_id
         if output_root.exists():
             glb = next(output_root.rglob("final_mesh.glb"), None)
@@ -228,6 +235,7 @@ def job_status(job_id: str):
                 "job_id": job_id,
                 "status": "succeeded" if glb else "failed",
                 "elapsed_s": None,
+                "error": None,
             }
         raise HTTPException(404, f"Job not found: {job_id}")
 
@@ -242,3 +250,63 @@ def job_status(job_id: str):
         "elapsed_s": elapsed,
         "error": job.get("error"),
     }
+
+
+@router.get("/jobs/{job_id}/stream")
+async def stream_status(job_id: str):
+    """SSE stream — pushes status updates until the job reaches a terminal state."""
+
+    async def generator():
+        last_status = None
+        for _ in range(600):  # max ~30 min at 3 s intervals
+            job = db.get_job(job_id)
+            if job is None:
+                # Fall back to disk probe
+                output_root = _PROJECT_ROOT / "output" / job_id
+                if output_root.exists():
+                    glb = next(output_root.rglob("final_mesh.glb"), None)
+                    job = {
+                        "job_id": job_id,
+                        "status": "succeeded" if glb else "failed",
+                        "elapsed_s": None,
+                        "error": None,
+                    }
+                else:
+                    yield f"data: {json.dumps({'status': 'not_found'})}\n\n"
+                    return
+
+            elapsed = None
+            if job.get("started_at"):
+                end = job.get("finished_at") or time.time()
+                elapsed = int(end - job["started_at"])
+
+            payload = {
+                "job_id": job_id,
+                "status": job["status"],
+                "elapsed_s": elapsed,
+                "error": job.get("error"),
+            }
+            if job["status"] != last_status:
+                yield f"data: {json.dumps(payload)}\n\n"
+                last_status = job["status"]
+
+            if job["status"] in ("succeeded", "failed"):
+                return
+
+            await asyncio.sleep(3)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/jobs/{job_id}/log")
+def get_log(job_id: str):
+    """Return the last 4 KB of the container log for a job."""
+    log_path = next((_PROJECT_ROOT / "output" / job_id).rglob("container.log"), None)
+    if not log_path or not log_path.exists():
+        raise HTTPException(404, "Log not found")
+    text = log_path.read_text(errors="replace")
+    return {"log": text[-4000:]}

@@ -655,6 +655,29 @@ class PrintQualityValidator:
         return issues
 
 
+def _upscale_scene_textures(scene: trimesh.Scene) -> trimesh.Scene:
+    """4× upscale baked texture maps embedded in a GLB scene (SF3D / SPAR3D / Hunyuan3D)."""
+    try:
+        from utils.pre_processor import ImagePreprocessor
+    except ImportError:
+        return scene
+
+    for geom in scene.geometry.values():
+        if not isinstance(geom, trimesh.Trimesh):
+            continue
+        mat = getattr(geom.visual, "material", None)
+        if mat is None or getattr(mat, "image", None) is None:
+            continue
+        try:
+            upscaled = ImagePreprocessor.maybe_upscale(mat.image)
+            if upscaled is not mat.image:
+                mat.image = upscaled
+                logger.info(f"Upscaled texture {mat.image.size} → {upscaled.size}")
+        except Exception as exc:
+            logger.debug(f"Texture upscale skipped ({exc})")
+    return scene
+
+
 def _scene_has_textures(obj: Any) -> bool:
     """Return True if obj is a trimesh.Scene with at least one embedded texture image."""
     if not isinstance(obj, trimesh.Scene):
@@ -785,6 +808,9 @@ class PostProcessingPipeline:
                     output_path = f"output/postprocessed/{ts}_processed.glb"
                 output_path = Path(output_path)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Upscale baked texture maps (4×) before export
+                scene = _upscale_scene_textures(scene)
 
                 # Export scene (textures preserved)
                 scene.export(str(output_path))
