@@ -83,6 +83,7 @@ async def create_job(
     gpu_sku: str = Form("A100"),
     max_runtime_minutes: int = Form(45),
     generate_views: str = Form("false"),
+    target_height_mm: float = Form(100.0),
     images: list[UploadFile] = Form(...),
 ):
     if engine not in ENGINE_META:
@@ -129,6 +130,7 @@ async def create_job(
         gpu_sku,
         max_runtime_minutes,
         use_generate_views,
+        target_height_mm,
     )
 
     return {"job_id": job_id, "status": "queued"}
@@ -141,6 +143,7 @@ def _run_job(
     gpu_sku: str,
     max_runtime_minutes: int,
     generate_views: bool = False,
+    target_height_mm: float = 100.0,
 ) -> None:
     _jobs[job_id]["status"] = "running"
     _jobs[job_id]["started_at"] = time.time()
@@ -153,6 +156,7 @@ def _run_job(
             output_dir=_PROJECT_ROOT / "output",
             max_runtime_minutes=max_runtime_minutes,
             generate_views=generate_views,
+            target_height_mm=target_height_mm,
         )
         _jobs[job_id]["status"] = "succeeded" if result.success else "failed"
         _jobs[job_id]["output_dir"] = (

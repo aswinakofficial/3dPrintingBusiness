@@ -608,6 +608,17 @@ Examples:
         default=4.0,
         help="Support diameter in mm (default: 4.0)",
     )
+    pp_group.add_argument(
+        "--target-height-mm",
+        type=float,
+        default=0.0,
+        help="Scale model so its largest dimension equals this height in mm (0 = no scaling)",
+    )
+    pp_group.add_argument(
+        "--no-auto-orient",
+        action="store_true",
+        help="Disable automatic stable-pose orientation before export",
+    )
 
     # Multi-view generation
     parser.add_argument(
@@ -679,6 +690,8 @@ Examples:
             generate_supports=args.supports,
             support_angle_threshold=args.support_angle,
             support_diameter=args.support_diameter,
+            auto_orient=not args.no_auto_orient,
+            target_height_mm=args.target_height_mm,
         )
 
         # Resolve output directory

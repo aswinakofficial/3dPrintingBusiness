@@ -159,6 +159,7 @@ async function submitJob() {
   form.append('gpu_sku', selectedGpu);
   form.append('max_runtime_minutes', document.getElementById('runtime-slider').value);
   form.append('generate_views', document.getElementById('toggle-generate-views').checked ? 'true' : 'false');
+  form.append('target_height_mm', document.getElementById('height-slider').value);
   uploadedFiles.forEach(f => form.append('images', f));
 
   try {
@@ -261,11 +262,15 @@ async function loadViewer(jobId) {
     const issueHtml = (rpt.issues || []).map(
       i => `<p class="text-xs text-orange-400 mt-1">⚠ ${i}</p>`
     ).join('');
+    const texBadge = rpt.textured
+      ? '<span class="text-xs text-purple-400 font-semibold">PBR Textured</span>'
+      : '';
     document.getElementById('print-quality').innerHTML = `
-      <div class="flex justify-between"><span class="text-gray-500">Print Score</span><span class="${scoreColor} font-bold">${score}/100</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Watertight</span><span>${wt}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Dimensions</span><span class="text-xs">${dims}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Volume</span><span>${vol}</span></div>
+      <div class="flex justify-between items-center"><span class="text-gray-500">Print Score</span><span class="${scoreColor} font-bold">${score}/100</span></div>
+      <div class="flex justify-between items-center"><span class="text-gray-500">Watertight</span><span>${wt}</span></div>
+      <div class="flex justify-between items-center"><span class="text-gray-500">Dimensions</span><span class="text-xs">${dims}</span></div>
+      <div class="flex justify-between items-center"><span class="text-gray-500">Volume</span><span>${vol}</span></div>
+      ${texBadge ? `<div class="mt-1">${texBadge}</div>` : ''}
       ${issueHtml}
     `;
   } catch (_) {

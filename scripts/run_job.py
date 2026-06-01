@@ -259,6 +259,7 @@ def submit_job(
     cleanup: bool = False,
     max_runtime_minutes: int = 30,
     generate_views: bool = False,
+    target_height_mm: float = 0.0,
     azure: Optional[AzureConfig] = None,
 ) -> JobResult:
     """Upload, run, and (optionally) download a 3D-processing job on Container Apps.
@@ -289,6 +290,7 @@ def submit_job(
         gpu_sku=gpu_sku,
         max_runtime_minutes=max_runtime_minutes,
         generate_views=generate_views,
+        target_height_mm=target_height_mm,
     )
     execution_name = runner.start_execution(job_id)
     success = runner.monitor_execution(
@@ -475,6 +477,7 @@ class JobsRunner:
         gpu_sku: str,
         max_runtime_minutes: int,
         generate_views: bool = False,
+        target_height_mm: float = 0.0,
     ) -> None:
         if engine not in CONTAINER_BASE_CONFIG:
             raise ValueError(f"Unknown engine: {engine}")
@@ -558,6 +561,8 @@ class JobsRunner:
                             "--output",
                             f"/workspace/outputs/{job_id}",
                             *(["--generate-views"] if generate_views else []),
+                            *(["--target-height-mm", str(target_height_mm)]
+                              if target_height_mm > 0 else []),
                         ],
                         volume_mounts=[
                             VolumeMount(

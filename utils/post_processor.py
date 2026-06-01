@@ -45,6 +45,10 @@ class PostProcessingConfig:
     enable_optimizer: bool = True
     target_face_count: int = 0  # 0 = auto from engine profile
 
+    # Print-prep settings
+    auto_orient: bool = True          # rotate to most stable print pose before export
+    target_height_mm: float = 0.0    # 0 = no scaling; >0 scales largest dim to this mm value
+
 
 class MeshRepair:
     """Repairs and cleans mesh geometry for 3D printing."""
@@ -651,6 +655,40 @@ class PrintQualityValidator:
         return issues
 
 
+def _scene_has_textures(obj: Any) -> bool:
+    """Return True if obj is a trimesh.Scene with at least one embedded texture image."""
+    if not isinstance(obj, trimesh.Scene):
+        return False
+    for geom in obj.geometry.values():
+        if not isinstance(geom, trimesh.Trimesh):
+            continue
+        vis = geom.visual
+        if not isinstance(vis, trimesh.visual.TextureVisuals):
+            continue
+        mat = getattr(vis, "material", None)
+        if mat is None:
+            continue
+        if getattr(mat, "image", None) is not None:
+            return True
+    return False
+
+
+def _apply_stable_orientation(mesh: trimesh.Trimesh) -> np.ndarray:
+    """Return the 4×4 transform that puts the mesh in its most stable print pose."""
+    for fn_name in ("stable_poses", "compute_stable_poses"):
+        fn = getattr(trimesh.poses, fn_name, None)
+        if fn is None:
+            continue
+        try:
+            transforms, probs = fn(mesh)
+            if len(transforms) > 0:
+                logger.info(f"Auto-orientation: best stable pose confidence={probs[0]:.2f}")
+                return transforms[0]
+        except Exception as exc:
+            logger.debug(f"stable_poses via {fn_name} failed ({exc})")
+    return np.eye(4)
+
+
 class PostProcessingPipeline:
     """Orchestrates complete mesh post-processing pipeline."""
 
@@ -672,91 +710,201 @@ class PostProcessingPipeline:
     ) -> Dict[str, Any]:
         """
         Process mesh through complete pipeline:
-          Layer 2: MeshOptimizer (debris, watertight, decimate, smooth)
+          Layer 2: MeshOptimizer (debris, watertight, decimate, smooth) — skipped for textured scenes
           Layer 3: Repair → hollow → supports
+          Orient: stable print pose rotation
+          Scale: target_height_mm rescaling
           Layer 4: PrintQualityValidator → print_report.json
           Export: final_mesh.glb + final_mesh.stl
+
+        Texture-preserving path: if the loaded GLB contains embedded UV textures (SF3D,
+        SPAR3D, Hunyuan3D), we skip the flatten+decimate step that destroys UV maps and
+        instead export the Scene directly while still generating a quality report from the
+        geometry.
         """
         logger.info(f"Processing mesh: {mesh_path}")
 
         try:
-            # Load mesh — GLBs from o_voxel come back as trimesh.Scene (multi-geometry).
-            # Concatenate all geometries into a single Trimesh so downstream code works.
-            mesh = trimesh.load(mesh_path)
-            if isinstance(mesh, trimesh.Scene):
-                mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
-            logger.info(
-                f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
-            )
+            raw = trimesh.load(mesh_path, force=None)
+            textured = _scene_has_textures(raw)
 
-            # Layer 2: MeshOptimizer — always-on
-            if self.config.enable_optimizer:
-                logger.info("Layer 2: MeshOptimizer")
-                target = self.config.target_face_count or 0
-                if target > 0:
-                    # Override per-engine target with explicit config value
-                    self.optimizer.ENGINE_FACE_TARGETS[engine_name] = target
-                mesh = self.optimizer.optimize(mesh, engine_name)
+            if textured:
+                # ── Texture-preserving path ──────────────────────────────────
+                # These engines (SF3D / SPAR3D / Hunyuan3D) already output clean,
+                # UV-unwrapped, baked GLBs. Flatten+decimate would erase texture data.
+                # We repair normals per-submesh and export the Scene as-is.
+                logger.info(
+                    f"Texture-preserving path active for {engine_name} "
+                    f"({len(raw.geometry)} submeshes with UV textures)"
+                )
+                scene = raw
+                for geom in scene.geometry.values():
+                    if isinstance(geom, trimesh.Trimesh):
+                        try:
+                            geom.fix_normals()
+                        except Exception:
+                            pass
 
-            # Layer 3: Repair
-            mesh = self.repair.repair_mesh(mesh)
-
-            # Layer 3: Hollow (optional)
-            if self.config.hollow_enabled:
-                mesh = self.hollowing.hollow_mesh(mesh)
-                logger.info("Hollowing complete")
-
-            # Layer 3: Generate supports (optional)
-            support_result = None
-            if self.config.generate_supports:
-                support_result = self.supports.generate_supports(mesh)
-                logger.info(f"Support generation complete: {support_result}")
-
-            # Generate output path
-            if output_path is None:
-                from datetime import datetime
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_path = (
-                    f"output/postprocessed/{timestamp}_processed.{self.config.output_format}"
+                # Flat geometry (no UVs) for orientation, scaling, quality report, STL
+                flat_parts = [
+                    trimesh.Trimesh(vertices=g.vertices.copy(), faces=g.faces.copy())
+                    for g in scene.geometry.values()
+                    if isinstance(g, trimesh.Trimesh) and len(g.faces) > 0
+                ]
+                mesh_flat = (
+                    trimesh.util.concatenate(flat_parts) if flat_parts
+                    else trimesh.Trimesh()
+                )
+                logger.info(
+                    f"Flat geometry for quality: {len(mesh_flat.vertices)} vertices, "
+                    f"{len(mesh_flat.faces)} faces"
                 )
 
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+                # Orient + Scale (apply same transform to both scene and flat copy)
+                transform = np.eye(4)
+                if self.config.auto_orient and len(mesh_flat.faces) > 0:
+                    transform = _apply_stable_orientation(mesh_flat)
+                    mesh_flat.apply_transform(transform)
+                    scene.apply_transform(transform)
 
-            # Export final GLB
-            mesh.export(str(output_path), file_type=self.config.output_format)
-            logger.info(f"Exported processed mesh to {output_path}")
+                if self.config.target_height_mm > 0 and len(mesh_flat.faces) > 0:
+                    current_max = mesh_flat.extents.max()
+                    if current_max > 0:
+                        scale = self.config.target_height_mm / current_max
+                        mesh_flat.apply_scale(scale)
+                        scene.apply_scale(scale)
+                        logger.info(
+                            f"Scaled to target height {self.config.target_height_mm}mm "
+                            f"(×{scale:.4f})"
+                        )
 
-            # Export STL alongside the GLB
-            stl_path = output_path.with_suffix(".stl")
-            try:
-                mesh.export(str(stl_path), file_type="stl")
-                logger.info(f"Exported STL to {stl_path}")
-            except Exception as exc:
-                logger.warning(f"STL export failed ({exc}); GLB still available")
-                stl_path = None
+                # Resolve output path
+                if output_path is None:
+                    from datetime import datetime
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_path = f"output/postprocessed/{ts}_processed.glb"
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Export supports if generated
-            support_path = None
-            if support_result and support_result.get("support_mesh") is not None:
-                support_path = output_path.with_stem(output_path.stem + "_supports")
-                support_result["support_mesh"].export(str(support_path))
-                logger.info(f"Exported supports to {support_path}")
+                # Export scene (textures preserved)
+                scene.export(str(output_path))
+                logger.info(f"Exported textured GLB to {output_path}")
 
-            # Layer 4: PrintQualityValidator
+                # Export STL (no texture needed, use flat geometry)
+                stl_path = output_path.with_suffix(".stl")
+                try:
+                    mesh_flat.export(str(stl_path), file_type="stl")
+                    logger.info(f"Exported STL to {stl_path}")
+                except Exception as exc:
+                    logger.warning(f"STL export failed ({exc})")
+                    stl_path = None
+
+                mesh = mesh_flat  # used for stats + quality report below
+                support_result = None
+
+            else:
+                # ── Full optimisation path (non-textured engines) ─────────────
+                if isinstance(raw, trimesh.Scene):
+                    mesh = trimesh.util.concatenate(list(raw.geometry.values()))
+                else:
+                    mesh = raw
+                logger.info(
+                    f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+                )
+
+                # Layer 2: MeshOptimizer
+                if self.config.enable_optimizer:
+                    logger.info("Layer 2: MeshOptimizer")
+                    target = self.config.target_face_count or 0
+                    if target > 0:
+                        self.optimizer.ENGINE_FACE_TARGETS[engine_name] = target
+                    mesh = self.optimizer.optimize(mesh, engine_name)
+
+                # Layer 3: Repair
+                mesh = self.repair.repair_mesh(mesh)
+
+                # Layer 3: Hollow (optional)
+                if self.config.hollow_enabled:
+                    mesh = self.hollowing.hollow_mesh(mesh)
+                    logger.info("Hollowing complete")
+
+                # Layer 3: Supports (optional)
+                support_result = None
+                if self.config.generate_supports:
+                    support_result = self.supports.generate_supports(mesh)
+                    logger.info(f"Support generation complete: {support_result}")
+
+                # Orient
+                if self.config.auto_orient and len(mesh.faces) > 0:
+                    transform = _apply_stable_orientation(mesh)
+                    mesh.apply_transform(transform)
+
+                # Scale
+                if self.config.target_height_mm > 0:
+                    current_max = mesh.extents.max()
+                    if current_max > 0:
+                        scale = self.config.target_height_mm / current_max
+                        mesh.apply_scale(scale)
+                        logger.info(
+                            f"Scaled to target height {self.config.target_height_mm}mm "
+                            f"(×{scale:.4f})"
+                        )
+
+                # Resolve output path
+                if output_path is None:
+                    from datetime import datetime
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_path = (
+                        f"output/postprocessed/{ts}_processed.{self.config.output_format}"
+                    )
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Export GLB
+                mesh.export(str(output_path), file_type=self.config.output_format)
+                logger.info(f"Exported mesh to {output_path}")
+
+                # Export STL
+                stl_path = output_path.with_suffix(".stl")
+                try:
+                    mesh.export(str(stl_path), file_type="stl")
+                    logger.info(f"Exported STL to {stl_path}")
+                except Exception as exc:
+                    logger.warning(f"STL export failed ({exc}); GLB still available")
+                    stl_path = None
+
+                # Export supports
+                support_path = None
+                if support_result and support_result.get("support_mesh") is not None:
+                    support_path = output_path.with_stem(output_path.stem + "_supports")
+                    support_result["support_mesh"].export(str(support_path))
+                    logger.info(f"Exported supports to {support_path}")
+
+            # ── Layer 4: PrintQualityValidator (both paths) ───────────────────
             logger.info("Layer 4: PrintQualityValidator")
             print_report = self.validator.validate(mesh, engine_name)
+            print_report["textured"] = textured  # surface detail preserved flag for UI
             report_path = output_path.parent / "print_report.json"
             with open(report_path, "w") as f:
                 json.dump(print_report, f, indent=2)
             logger.info(f"Saved print report to {report_path}")
 
+            support_path = (
+                None if textured
+                else (
+                    str(support_path)
+                    if support_result and support_result.get("support_mesh") is not None
+                    else None
+                )
+            )
+
             return {
                 "mesh_path": str(output_path),
                 "stl_path": str(stl_path) if stl_path else None,
-                "support_path": str(support_path) if support_path else None,
+                "support_path": support_path,
                 "vertices": len(mesh.vertices),
                 "faces": len(mesh.faces),
+                "textured": textured,
                 "has_supports": (
                     support_result.get("has_supports", False) if support_result else False
                 ),
