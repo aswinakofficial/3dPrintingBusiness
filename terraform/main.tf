@@ -28,21 +28,11 @@ resource "azurerm_storage_account" "main" {
   tags = var.tags
 }
 
-# Premium File Storage for Container Apps job data and model cache
-resource "azurerm_storage_account" "files" {
-  name                     = "st${replace(var.project_name, "-", "")}files${var.environment}"
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
-  account_tier             = "Premium"
-  account_replication_type = "LRS"
-  account_kind             = "FileStorage"
-
-  tags = var.tags
-}
-
+# Azure Files share on the main Standard LRS account — ~4× cheaper than a
+# separate Premium FileStorage account ($0.06/GiB used vs $0.23/GiB provisioned).
 resource "azurerm_storage_share" "job_data" {
   name                 = var.azure_files_share_name
-  storage_account_name = azurerm_storage_account.files.name
+  storage_account_name = azurerm_storage_account.main.name
   quota                = var.azure_files_share_quota_gb
 }
 
@@ -152,15 +142,14 @@ resource "azurerm_container_app_environment" "main" {
   tags = var.tags
 }
 
-# Register the existing Azure Files share with the Container Apps env so
-# Jobs can mount /workspace at runtime. Trigger script writes inputs to
-# this share before starting a job and reads outputs from it after.
+# Register the Azure Files share with the Container Apps env so jobs can mount
+# /workspace at runtime. Now uses the main Standard LRS account.
 resource "azurerm_container_app_environment_storage" "jobdata" {
   name                         = "jobdata"
   container_app_environment_id = azurerm_container_app_environment.main.id
-  account_name                 = azurerm_storage_account.files.name
+  account_name                 = azurerm_storage_account.main.name
   share_name                   = azurerm_storage_share.job_data.name
-  access_key                   = azurerm_storage_account.files.primary_access_key
+  access_key                   = azurerm_storage_account.main.primary_access_key
   access_mode                  = "ReadWrite"
 }
 

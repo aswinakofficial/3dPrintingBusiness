@@ -112,7 +112,7 @@ CONTAINER_BASE_CONFIG = {
 _DEFAULT_RESOURCE_GROUP = "rg-3dfigurine-lab-dev-westus"
 _DEFAULT_LOCATION = "westus"
 _DEFAULT_CONTAINER_APPS_ENV = "cae-3dfigurine-lab-dev"
-_DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfigurinelabfilesdev"
+_DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfigurinelabdev"  # now uses main account (Standard LRS)
 _DEFAULT_FILE_SHARE = "jobdata"
 _DEFAULT_FILE_STORAGE_NAME = "jobdata"  # name registered in the env
 _DEFAULT_CONTAINER_REGISTRY = "acr3dfigurinelabdev.azurecr.io"
@@ -301,14 +301,17 @@ def submit_job(
     out_dir: Optional[Path] = None
     if success and not skip_download:
         out_dir = runner.download_output(job_id, output_dir / job_id)
+        # Free share space immediately after download; HF cache is preserved.
+        runner.cleanup_share(job_id)
 
     if not success:
         runner.dump_logs(job_id, execution_name, output_dir / job_id / "container.log")
-        # Also pull any files written to the share (log files, partial output)
+        # Pull any files written to the share (log files, partial output)
         try:
             runner.download_output(job_id, output_dir / job_id)
         except Exception as e:
             logger.warning(f"Could not download share files on failure: {e}")
+        runner.cleanup_share(job_id)
 
     if cleanup or not success:
         runner.cleanup(job_id)
@@ -649,6 +652,39 @@ class JobsRunner:
                 data = self._share_file(remote_path).download_file().readall()
                 local_path.write_bytes(data)
                 logger.info(f"Downloaded: {local_path}")
+
+    def cleanup_share(self, job_id: str) -> None:
+        """Delete inputs/<job_id>/ and outputs/<job_id>/ from the file share.
+
+        Called after a successful download to prevent the share from growing
+        unboundedly.  The HF model cache at .cache/huggingface is intentionally
+        left in place so subsequent jobs skip the model-download step.
+        """
+        for prefix in (f"inputs/{job_id}", f"outputs/{job_id}"):
+            try:
+                self._delete_share_dir_recursive(prefix)
+                logger.info(f"Deleted share directory: {prefix}")
+            except Exception as exc:
+                logger.warning(f"Could not delete {prefix} from share: {exc}")
+
+    def _delete_share_dir_recursive(self, dir_path: str) -> None:
+        """Delete all files in a share directory, then the directory itself."""
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            dir_client = self._share_dir(dir_path)
+            for entry in dir_client.list_directories_and_files():
+                child = f"{dir_path}/{entry['name']}"
+                if entry.get("is_directory"):
+                    self._delete_share_dir_recursive(child)
+                else:
+                    try:
+                        self._share_file(child).delete_file()
+                    except ResourceNotFoundError:
+                        pass
+            dir_client.delete_directory()
+        except ResourceNotFoundError:
+            pass
 
     def cleanup(self, job_id: str) -> None:
         """Delete the Job resource. Doesn't touch the file share content

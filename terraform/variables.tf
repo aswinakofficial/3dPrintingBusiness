@@ -84,7 +84,7 @@ variable "azure_files_share_name" {
 variable "azure_files_share_quota_gb" {
   description = "Azure Files share quota in GiB"
   type        = number
-  default     = 1024
+  default     = 100
 }
 
 variable "budget_monthly_usd" {

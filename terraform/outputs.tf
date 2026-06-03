@@ -20,13 +20,13 @@ output "storage_account_connection_string" {
 }
 
 output "file_storage_account_name" {
-  description = "Name of the Azure Files storage account"
-  value       = azurerm_storage_account.files.name
+  description = "Name of the storage account hosting the Azure Files share"
+  value       = azurerm_storage_account.main.name
 }
 
 output "file_storage_account_key" {
-  description = "Primary access key for the Azure Files storage account"
-  value       = azurerm_storage_account.files.primary_access_key
+  description = "Primary access key for the Azure Files share (same account as blob storage)"
+  value       = azurerm_storage_account.main.primary_access_key
   sensitive   = true
 }
 
@@ -109,7 +109,6 @@ output "deployment_summary" {
     location           = azurerm_resource_group.main.location
     environment        = var.environment
     storage_account    = azurerm_storage_account.main.name
-    file_storage       = azurerm_storage_account.files.name
     file_share         = azurerm_storage_share.job_data.name
     container_registry = azurerm_container_registry.main.name
     acr_login_server   = azurerm_container_registry.main.login_server
