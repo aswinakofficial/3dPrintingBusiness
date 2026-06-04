@@ -102,7 +102,7 @@ variable "budget_alert_email" {
 variable "budget_start_date" {
   description = "Budget billing-cycle start date (ISO-8601, must be the first of a month)."
   type        = string
-  default     = "2026-05-01T00:00:00Z"
+  default     = "2026-06-01T00:00:00Z"
 }
 
 variable "tags" {

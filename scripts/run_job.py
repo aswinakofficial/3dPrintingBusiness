@@ -109,13 +109,13 @@ CONTAINER_BASE_CONFIG = {
 }
 
 
-_DEFAULT_RESOURCE_GROUP = "rg-3dfigurine-lab-dev-westus"
+_DEFAULT_RESOURCE_GROUP = "rg-3dfiglab-dev-westus"
 _DEFAULT_LOCATION = "westus"
-_DEFAULT_CONTAINER_APPS_ENV = "cae-3dfigurine-lab-dev"
-_DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfigurinelabdev"  # now uses main account (Standard LRS)
+_DEFAULT_CONTAINER_APPS_ENV = "cae-3dfiglab-dev"
+_DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfiglabdev"
 _DEFAULT_FILE_SHARE = "jobdata"
 _DEFAULT_FILE_STORAGE_NAME = "jobdata"  # name registered in the env
-_DEFAULT_CONTAINER_REGISTRY = "acr3dfigurinelabdev.azurecr.io"
+_DEFAULT_CONTAINER_REGISTRY = "acr3dfiglabdev.azurecr.io"
 _DEFAULT_WORKLOAD_PROFILE = "gpu-t4"
 
 
