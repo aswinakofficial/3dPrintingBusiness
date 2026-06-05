@@ -71,8 +71,9 @@ RUN pip install --no-cache-dir \
     tensorboard pandas lpips zstandard kornia timm einops
 
 # Real-ESRGAN — used by maybe_upscale() in pre_processor.py to upscale small inputs
-RUN pip install --no-cache-dir "basicsr==1.4.2" "realesrgan==0.3.0"
-RUN python3 -c "from realesrgan import RealESRGANer; from basicsr.archs.rrdbnet_arch import RRDBNet; print('realesrgan OK')"
+RUN pip install --no-cache-dir \
+    "basicsr @ git+https://github.com/XPixelGroup/BasicSR.git" \
+    "realesrgan @ git+https://github.com/xinntao/Real-ESRGAN.git"
 
 # transformers from GitHub HEAD: dinov3_vit landed 2026-05-08 and is not yet
 # in any PyPI release. Pin to the commit that introduced it.

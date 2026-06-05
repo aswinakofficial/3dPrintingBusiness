@@ -65,14 +65,17 @@ RUN pip install --no-cache-dir --no-build-isolation \
 
 # InstantMesh Python deps (excluding torch which is already installed, and
 # gradio/webui deps not needed in the container engine)
+# Pin to a mutually-compatible set (all released Oct–Nov 2023 together).
+# diffusers==0.20.2 is required by the Zero123++ custom pipeline.
+# Install huggingface-hub first to anchor the version before diffusers/transformers.
+RUN pip install --no-cache-dir "huggingface-hub==0.19.4"
 RUN pip install --no-cache-dir \
     "pytorch-lightning==2.1.2" \
-    "transformers==4.34.1" \
+    "transformers==4.33.3" \
     "diffusers==0.20.2" \
-    "accelerate" \
+    "accelerate==0.24.1" \
     "omegaconf" \
     "einops" \
-    "huggingface-hub>=0.22.0,<1.0" \
     "xatlas" \
     "PyMCubes" \
     "plyfile" \

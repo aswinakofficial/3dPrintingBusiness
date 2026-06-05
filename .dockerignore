@@ -82,6 +82,8 @@ docker/*
 !docker/entrypoint-sf3d.sh
 !docker/Dockerfile.instantmesh
 !docker/entrypoint-instantmesh.sh
+!docker/Dockerfile.spar3d
+!docker/entrypoint-spar3d.sh
 !docker/shared/
 !docker/shared/Dockerfile.base
 docker-compose*
