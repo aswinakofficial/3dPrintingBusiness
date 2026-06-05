@@ -113,12 +113,18 @@ RUN pip install --no-cache-dir \
 # Compile mesh_inpaint_processor.cpp — C++ pybind11 extension for vertex inpainting.
 # Without this, MeshRender.py silently skips the import and meshVerticeInpaint is
 # undefined at runtime, causing NameError in uv_inpaint(vertex_inpaint=True).
-RUN cd /opt/hunyuan3d-space/hy3dpaint/DifferentiableRenderer && \
-    c++ -O3 -Wall -shared -std=c++11 -fPIC \
-    $(python -m pybind11 --includes) \
-    mesh_inpaint_processor.cpp \
-    -o "mesh_inpaint_processor$(python3-config --extension-suffix)" && \
-    echo "[OK] mesh_inpaint_processor compiled"
+RUN CPP_SRC=/opt/hunyuan3d-space/hy3dpaint/DifferentiableRenderer/mesh_inpaint_processor.cpp && \
+    if [ -f "$CPP_SRC" ]; then \
+        cd "$(dirname $CPP_SRC)" && \
+        c++ -O3 -Wall -shared -std=c++11 -fPIC \
+            -I/usr/local/cuda/include \
+            $(python -m pybind11 --includes) \
+            mesh_inpaint_processor.cpp \
+            -o "mesh_inpaint_processor$(python3-config --extension-suffix)" && \
+        echo "[OK] mesh_inpaint_processor compiled"; \
+    else \
+        echo "[WARN] mesh_inpaint_processor.cpp not in GitHub repo — vertex inpaint disabled"; \
+    fi
 
 # Make Space code importable:
 #   /opt/hunyuan3d-space/hy3dshape → import hy3dshape (nested pkg: outer dir is NOT a package)

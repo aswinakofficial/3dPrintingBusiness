@@ -63,7 +63,8 @@ RUN cd /opt/spar3d && \
     pip install --no-cache-dir --no-build-isolation -r /tmp/spar3d-req-no-torch.txt
 
 # Install the spar3d package itself
-RUN pip install --no-cache-dir -e /opt/spar3d/
+# spar3d repo has no setup.py — add to PYTHONPATH instead
+ENV PYTHONPATH="/opt/spar3d:${PYTHONPATH}"
 
 # Background removal
 RUN pip install --no-cache-dir \
