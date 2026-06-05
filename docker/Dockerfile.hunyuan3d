@@ -84,10 +84,14 @@ RUN if [ -f /opt/hunyuan3d-space/requirements.txt ]; then \
         pip install --no-cache-dir -r /opt/hunyuan3d-space/requirements.txt; \
     fi
 
-# Compile custom CUDA rasterizer (required by texture paint pipeline)
-RUN pip install --no-cache-dir \
-    /opt/hunyuan3d-space/hy3dpaint/packages/custom_rasterizer \
-    --no-build-isolation
+# Compile custom CUDA rasterizer — path differs between HF Space and GitHub repo.
+# Use find so this works regardless of exact location.
+RUN RAST=$(find /opt/hunyuan3d-space -type d -name "custom_rasterizer" | head -1) && \
+    if [ -n "$RAST" ]; then \
+        pip install --no-cache-dir --no-build-isolation "$RAST"; \
+    else \
+        echo "custom_rasterizer not found in repo — skipping (will fall back to CPU rasterizer)"; \
+    fi
 
 # Extra dependencies required by pipeline (may not be in Space requirements.txt)
 RUN pip install --no-cache-dir \
@@ -101,7 +105,8 @@ RUN pip install --no-cache-dir \
     "pymeshlab==2022.2.post3" \
     "cupy-cuda12x==13.4.1" \
     xatlas open3d imageio "scikit-image==0.24.0" \
-    "basicsr==1.4.2" "realesrgan==0.3.0" \
+    "basicsr @ git+https://github.com/XPixelGroup/BasicSR.git" \
+    "realesrgan @ git+https://github.com/xinntao/Real-ESRGAN.git" \
     "timm==0.9.16" torchdiffeq fast-simplification \
     pybind11
 

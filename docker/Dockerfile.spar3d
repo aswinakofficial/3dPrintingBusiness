@@ -60,7 +60,7 @@ RUN git clone --depth 1 https://github.com/Stability-AI/stable-point-aware-3d /o
 RUN cd /opt/spar3d && \
     grep -vE "^torch[^-]|^torchvision|^torchaudio" requirements.txt \
     > /tmp/spar3d-req-no-torch.txt && \
-    pip install --no-cache-dir -r /tmp/spar3d-req-no-torch.txt
+    pip install --no-cache-dir --no-build-isolation -r /tmp/spar3d-req-no-torch.txt
 
 # Install the spar3d package itself
 RUN pip install --no-cache-dir -e /opt/spar3d/
