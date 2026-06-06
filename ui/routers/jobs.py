@@ -1,6 +1,7 @@
 """Job submission and status tracking endpoints."""
 import asyncio
 import json
+import shutil
 import sys
 import time
 import uuid
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 # Add project root to path so scripts.run_job is importable
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -300,6 +302,51 @@ async def stream_status(job_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class BulkDeleteRequest(BaseModel):
+    job_ids: list[str]
+
+
+def _purge_job(job_id: str) -> None:
+    """Remove DB record, local output/input dirs, and Azure Files share dirs."""
+    db.delete_job(job_id)
+    for sub in ("output", "input"):
+        d = _PROJECT_ROOT / sub / job_id
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+    # Best-effort share cleanup — may already be clean from post-download hook
+    try:
+        from scripts.run_job import AzureConfig, JobsRunner
+        runner = JobsRunner(AzureConfig.from_env())
+        runner.cleanup_share(job_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(f"Share cleanup skipped for {job_id}: {exc}")
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job_endpoint(job_id: str):
+    """Delete a single job: DB record, local files, and Azure Files share dirs."""
+    job = db.get_job(job_id)
+    if job and job["status"] in ("queued", "running"):
+        raise HTTPException(409, "Cannot delete a job that is still running")
+    _purge_job(job_id)
+    return {"deleted": job_id}
+
+
+@router.delete("/jobs")
+def bulk_delete_jobs(req: BulkDeleteRequest):
+    """Delete multiple jobs. Running/queued jobs are skipped and reported."""
+    deleted, skipped = [], []
+    for job_id in req.job_ids:
+        job = db.get_job(job_id)
+        if job and job["status"] in ("queued", "running"):
+            skipped.append(job_id)
+            continue
+        _purge_job(job_id)
+        deleted.append(job_id)
+    return {"deleted": deleted, "skipped": skipped}
 
 
 @router.get("/jobs/{job_id}/log")

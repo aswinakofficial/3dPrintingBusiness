@@ -8,6 +8,7 @@ let currentJobId = null;
 let statusEventSource = null;
 let allJobs = [];
 let compareList = []; // [{job_id, engine}]
+let selectedJobs = new Set(); // job_ids checked in history view
 
 const ENGINE_COLORS = { trellis: 'blue', meshroom: 'green', hunyuan3d: 'purple', triposg: 'orange', sf3d: 'teal', spar3d: 'cyan', instantmesh: 'yellow' };
 
@@ -408,6 +409,7 @@ function renderHistory() {
   if (jobs.length === 0) {
     grid.innerHTML = '';
     empty.classList.remove('hidden');
+    updateBulkBar();
     return;
   }
   empty.classList.add('hidden');
@@ -415,17 +417,28 @@ function renderHistory() {
   grid.innerHTML = jobs.map(job => {
     const col = ENGINE_COLORS[job.engine] || 'blue';
     const date = job.created_at ? new Date(job.created_at * 1000).toLocaleString() : '—';
+    const isRunning = job.status === 'running' || job.status === 'queued';
+    const checked = selectedJobs.has(job.job_id) ? 'checked' : '';
     const thumb = job.has_mesh && job.status === 'succeeded'
       ? `<div class="h-40 bg-gray-950 flex items-center justify-center rounded-t-xl overflow-hidden">
            <model-viewer src="/outputs/${job.job_id}/mesh" auto-rotate
              style="width:100%;height:100%;background:#030712" camera-controls>
            </model-viewer>
          </div>`
-      : `<div class="h-40 bg-gray-950 flex items-center justify-center rounded-t-xl text-gray-700 text-4xl">${job.status === 'running' ? '⏳' : job.status === 'failed' ? '✗' : '○'}</div>`;
+      : `<div class="h-40 bg-gray-950 flex items-center justify-center rounded-t-xl text-gray-700 text-4xl">${isRunning ? '⏳' : job.status === 'failed' ? '✗' : '○'}</div>`;
 
     return `
-      <div class="job-card bg-gray-900 rounded-xl overflow-hidden" onclick="openJob('${job.job_id}', '${job.engine}', '${job.status}')">
+      <div class="job-card relative bg-gray-900 rounded-xl overflow-hidden" onclick="openJob('${job.job_id}', '${job.engine}', '${job.status}')">
         ${thumb}
+        <!-- Checkbox (top-left) -->
+        <input type="checkbox" ${checked} ${isRunning ? 'disabled title="Cannot select running jobs"' : ''}
+          onclick="event.stopPropagation();toggleSelect('${job.job_id}',this)"
+          class="absolute top-2 left-2 w-4 h-4 accent-indigo-500 cursor-pointer z-10" />
+        <!-- Delete button (top-right) -->
+        ${!isRunning ? `<button
+          onclick="event.stopPropagation();deleteSingleJob('${job.job_id}')"
+          class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-gray-800 hover:bg-red-700 text-gray-400 hover:text-white text-xs transition z-10"
+          title="Delete job">✕</button>` : ''}
         <div class="p-3">
           <div class="flex items-center justify-between mb-1">
             <span class="text-xs font-semibold px-2 py-0.5 rounded engine-badge-${col}">${job.engine}</span>
@@ -437,6 +450,78 @@ function renderHistory() {
       </div>
     `;
   }).join('');
+
+  // Keep select-all checkbox in sync
+  const allCb = document.getElementById('select-all-cb');
+  if (allCb) {
+    const selectableIds = jobs.filter(j => j.status !== 'running' && j.status !== 'queued').map(j => j.job_id);
+    allCb.checked = selectableIds.length > 0 && selectableIds.every(id => selectedJobs.has(id));
+    allCb.indeterminate = !allCb.checked && selectableIds.some(id => selectedJobs.has(id));
+  }
+}
+
+// ── History — delete & bulk select ───────────────────────────────────────────
+function toggleSelect(jobId, cb) {
+  cb.checked ? selectedJobs.add(jobId) : selectedJobs.delete(jobId);
+  updateBulkBar();
+  // Update select-all state without full re-render
+  const visibleSelectable = allJobs
+    .filter(j => j.status !== 'running' && j.status !== 'queued')
+    .map(j => j.job_id);
+  const allCb = document.getElementById('select-all-cb');
+  if (allCb) {
+    allCb.checked = visibleSelectable.length > 0 && visibleSelectable.every(id => selectedJobs.has(id));
+    allCb.indeterminate = !allCb.checked && visibleSelectable.some(id => selectedJobs.has(id));
+  }
+}
+
+function toggleSelectAll(cb) {
+  const engineFilter = document.getElementById('filter-engine').value;
+  const statusFilter = document.getElementById('filter-status').value;
+  let visible = allJobs;
+  if (engineFilter) visible = visible.filter(j => j.engine === engineFilter);
+  if (statusFilter) visible = visible.filter(j => j.status === statusFilter);
+  const selectable = visible.filter(j => j.status !== 'running' && j.status !== 'queued').map(j => j.job_id);
+  selectable.forEach(id => cb.checked ? selectedJobs.add(id) : selectedJobs.delete(id));
+  renderHistory();
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const n = selectedJobs.size;
+  document.getElementById('bulk-delete-bar').classList.toggle('hidden', n === 0);
+  document.getElementById('bulk-delete-count').textContent = n;
+}
+
+async function deleteSingleJob(jobId) {
+  if (!confirm(`Delete job ${jobId}?\n\nThis removes the model file, input images, and the Azure Files share copy.`)) return;
+  try {
+    await fetch(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+  } catch (_) {}
+  allJobs = allJobs.filter(j => j.job_id !== jobId);
+  selectedJobs.delete(jobId);
+  renderHistory();
+  updateBulkBar();
+}
+
+async function bulkDelete() {
+  const ids = [...selectedJobs];
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} job(s)?\n\nModel files, input images, and Azure Files share copies will be removed. This cannot be undone.`)) return;
+  try {
+    const res = await fetch('/jobs', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_ids: ids }),
+    });
+    const { deleted = [], skipped = [] } = await res.json();
+    deleted.forEach(id => { allJobs = allJobs.filter(j => j.job_id !== id); selectedJobs.delete(id); });
+    if (skipped.length) alert(`${skipped.length} running job(s) were skipped and not deleted.`);
+  } catch (e) {
+    alert(`Delete failed: ${e.message}`);
+  }
+  renderHistory();
+  updateBulkBar();
 }
 
 function openJob(jobId, engine, status) {

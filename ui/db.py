@@ -90,3 +90,8 @@ def list_jobs(limit: int = 100) -> list[dict]:
         "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def delete_job(job_id: str) -> None:
+    _conn().execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+    _conn().commit()
