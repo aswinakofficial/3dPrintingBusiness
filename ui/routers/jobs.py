@@ -307,6 +307,7 @@ def get_log(job_id: str):
     """Return the last 4 KB of the container log for a job."""
     log_path = next((_PROJECT_ROOT / "output" / job_id).rglob("container.log"), None)
     if not log_path or not log_path.exists():
-        raise HTTPException(404, "Log not found")
+        # Return empty log rather than 404 — container may not have run yet
+        return {"log": ""}
     text = log_path.read_text(errors="replace")
     return {"log": text[-4000:]}

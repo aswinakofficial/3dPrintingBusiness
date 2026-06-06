@@ -316,7 +316,7 @@ async function showFailure(jobId, errorSummary) {
     if (res.ok) {
       const { log } = await res.json();
       const pre = document.getElementById('failure-log');
-      if (pre) pre.textContent = log;
+      if (pre) pre.textContent = log || '(container log not available — job may not have started yet)';
     }
   } catch (_) {}
 }
