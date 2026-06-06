@@ -2,7 +2,7 @@
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let selectedEngine = 'hunyuan3d';
-let selectedGpu = 'A100';
+let selectedGpu = 'T4';
 let uploadedFiles = [];
 let currentJobId = null;
 let statusEventSource = null;
