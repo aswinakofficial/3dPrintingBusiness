@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 _ROOT = Path(__file__).parent.parent
@@ -44,6 +44,13 @@ app.add_middleware(
 
 app.include_router(jobs.router)
 app.include_router(outputs.router)
+
+_FAVICON = Path(__file__).parent / "static" / "favicon.svg"
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(_FAVICON, media_type="image/svg+xml")
 
 app.mount(
     "/",
