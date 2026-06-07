@@ -110,6 +110,28 @@ CONTAINER_BASE_CONFIG = {
 
 
 _DEFAULT_RESOURCE_GROUP = "rg-3dfiglab-dev-westus"
+_DEFAULT_KV_NAME = "kv-3dfiglab-dev"
+
+
+def _resolve_hf_token() -> str:
+    """Return HF_TOKEN from env; fall back to Key Vault if env var is absent."""
+    token = os.getenv("HF_TOKEN", "")
+    if token:
+        return token
+    try:
+        from azure.keyvault.secrets import SecretClient
+        kv_name = os.getenv("AZURE_KEY_VAULT_NAME", _DEFAULT_KV_NAME)
+        client = SecretClient(
+            vault_url=f"https://{kv_name}.vault.azure.net",
+            credential=DefaultAzureCredential(),
+        )
+        token = client.get_secret("HF-TOKEN").value or ""
+        if token:
+            os.environ["HF_TOKEN"] = token  # cache for subsequent calls
+            logger.info("HF_TOKEN loaded from Key Vault")
+    except Exception as exc:
+        logger.warning(f"Could not load HF_TOKEN from Key Vault: {exc}")
+    return token
 _DEFAULT_LOCATION = "westus"
 _DEFAULT_CONTAINER_APPS_ENV = "cae-3dfiglab-dev"
 _DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfiglabdev"
@@ -539,7 +561,7 @@ class JobsRunner:
                             ),
                             EnvironmentVar(
                                 name="HF_TOKEN",
-                                value=os.getenv("HF_TOKEN", ""),
+                                value=_resolve_hf_token(),
                             ),
                             # Container Apps doesn't inherit Dockerfile ENV for
                             # NVIDIA runtime vars — must be set explicitly so
