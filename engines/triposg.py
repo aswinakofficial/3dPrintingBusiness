@@ -66,8 +66,33 @@ class TripoSGEngine(Engine):
 
         try:
             from triposg.pipelines import TripoSGPipeline  # noqa: F401
-        except ImportError as exc:
-            raise RuntimeError(f"triposg package not installed in container: {exc}")
+        except Exception as exc:
+            # Be tolerant: triposg may expose a differently-named pipeline class
+            # in different package versions. Inspect the installed package and
+            # provide a clear error message listing available symbols to help
+            # operators decide whether to pin a runtime package or rebuild the image.
+            try:
+                import triposg
+                import inspect
+
+                members = []
+                if hasattr(triposg, "pipelines"):
+                    for name, obj in inspect.getmembers(triposg.pipelines):
+                        members.append(name)
+                else:
+                    for name, obj in inspect.getmembers(triposg):
+                        members.append(name)
+
+                members = sorted(set(members))
+                available = ", ".join(members[:50]) or "(none)"
+                raise RuntimeError(
+                    "triposg appears installed but expected 'TripoSGPipeline' was not found. "
+                    f"Available top-level members: {available}. "
+                    "Ensure the runtime image installs the triposg package version that provides TripoSGPipeline, "
+                    "or update this engine to use the available API.") from exc
+            except Exception:
+                raise RuntimeError(
+                    f"triposg package not installed or broken in container: {exc}") from exc
 
         logger.info("triposg imports OK")
         return True

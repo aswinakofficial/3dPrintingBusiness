@@ -563,6 +563,12 @@ class JobsRunner:
                                 name="HF_TOKEN",
                                 value=_resolve_hf_token(),
                             ),
+                            # Mitigate PyTorch CUDA fragmentation that can trigger OOM
+                            # See: https://pytorch.org/docs/stable/notes/cuda.html#environment-variables
+                            EnvironmentVar(
+                                name="PYTORCH_CUDA_ALLOC_CONF",
+                                value="expandable_segments:True",
+                            ),
                             # Container Apps doesn't inherit Dockerfile ENV for
                             # NVIDIA runtime vars — must be set explicitly so
                             # the NVIDIA container hook exposes the GPU device.

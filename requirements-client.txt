@@ -24,3 +24,5 @@ rich>=13
 
 # Local image validation (used by the --validate-only flag)
 pillow>=10
+uvicorn[standard]
+fastapi>=0.95
