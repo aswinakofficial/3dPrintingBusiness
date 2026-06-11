@@ -312,6 +312,13 @@ async function showFailure(jobId, errorSummary) {
   if (!panel) return;
   panel.classList.remove('hidden');
 
+  // Wire up the failure-panel resubmit button to resubmit this job
+  const resBtn = document.getElementById('failure-resubmit-btn');
+  if (resBtn) {
+    resBtn.disabled = false;
+    resBtn.onclick = (ev) => { ev.stopPropagation(); resubmitJob(jobId); };
+  }
+
   try {
     const res = await fetch(`/jobs/${jobId}/log`);
     if (res.ok) {
@@ -320,6 +327,12 @@ async function showFailure(jobId, errorSummary) {
       if (pre) pre.textContent = log || '(container log not available — job may not have started yet)';
     }
   } catch (_) {}
+}
+
+
+async function resubmitFromPanel() {
+  if (!currentJobId) return alert('No job selected to resubmit');
+  await resubmitJob(currentJobId);
 }
 
 function setStatusBadge(status) {
@@ -439,6 +452,11 @@ function renderHistory() {
           onclick="event.stopPropagation();deleteSingleJob('${job.job_id}')"
           class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-gray-800 hover:bg-red-700 text-gray-400 hover:text-white text-xs transition z-10"
           title="Delete job">✕</button>` : ''}
+        ${job.status === 'failed' ? `<button
+          onclick="event.stopPropagation();resubmitJob('${job.job_id}')"
+          id="resubmit-btn-${job.job_id}"
+          class="absolute top-2 right-12 w-6 h-6 flex items-center justify-center rounded-full bg-yellow-700 hover:bg-yellow-600 text-white text-xs transition z-10"
+          title="Resubmit job">↻</button>` : ''}
         <div class="p-3">
           <div class="flex items-center justify-between mb-1">
             <span class="text-xs font-semibold px-2 py-0.5 rounded engine-badge-${col}">${job.engine}</span>
@@ -539,6 +557,34 @@ function openJob(jobId, engine, status) {
     showView('status');
     if (status === 'succeeded') loadViewer(jobId);
     if (status === 'failed') showFailure(jobId, null);
+  }
+}
+
+// ── Resubmit helper
+async function resubmitJob(originalJobId) {
+  try {
+    const btn = document.getElementById(`resubmit-btn-${originalJobId}`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Queued'; }
+
+    const form = new FormData();
+    const res = await fetch(`/jobs/${encodeURIComponent(originalJobId)}/resubmit`, { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Resubmit failed: ${res.status}`);
+    }
+    const data = await res.json();
+    const newJobId = data.job_id || data.jobId || data.job_id;
+    if (!newJobId) throw new Error('Resubmit response missing job_id');
+
+    // Refresh history and open status for new job
+    await loadHistory();
+    openStatusView(newJobId, (allJobs.find(j => j.job_id === originalJobId)?.engine) || originalJobId.split('-')[0]);
+    alert(`Resubmitted: ${newJobId}`);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    const btn = document.getElementById(`resubmit-btn-${originalJobId}`);
+    if (btn) { btn.disabled = false; btn.textContent = '↻'; }
   }
 }
 

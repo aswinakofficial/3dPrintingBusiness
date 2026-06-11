@@ -211,10 +211,16 @@
     <div id="failure-panel" class="hidden mt-4 bg-gray-900 border border-red-900 rounded-xl p-5">
       <div class="flex items-center justify-between mb-3">
         <p class="text-sm font-semibold text-red-400">Container Log (last 4 KB)</p>
+      <div class="flex items-center gap-2">
+        <button id="failure-resubmit-btn" onclick="resubmitFromPanel()"
+          class="text-xs px-3 py-1.5 bg-yellow-700 hover:bg-yellow-600 rounded-lg transition">
+          ↻ Resubmit
+        </button>
         <button onclick="showView('submit')"
           class="text-xs px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded-lg transition">
           ↩ Try a different engine
         </button>
+      </div>
       </div>
       <details>
         <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 mb-2">Show / hide log</summary>
