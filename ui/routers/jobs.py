@@ -216,11 +216,17 @@ def list_jobs(limit: int = 100):
 
     merged = db_jobs + extra
 
-    # Annotate mesh availability
+    # Annotate mesh availability and whether original input files are present locally
     for j in merged:
         if "has_mesh" not in j or j["has_mesh"] is None:
             out = j.get("output_dir")
             j["has_mesh"] = bool(out and list(Path(out).rglob("final_mesh.glb")))
+        # has_inputs: check local input/<job_id> directory for any files
+        try:
+            input_dir = _PROJECT_ROOT / "input" / j.get("job_id")
+            j["has_inputs"] = bool(input_dir.exists() and any(input_dir.iterdir()))
+        except Exception:
+            j["has_inputs"] = False
 
     merged.sort(key=lambda j: j.get("created_at") or 0, reverse=True)
     return merged[:limit]
