@@ -358,3 +358,88 @@ def get_log(job_id: str):
         return {"log": ""}
     text = log_path.read_text(errors="replace")
     return {"log": text[-4000:]}
+
+
+@router.post("/jobs/{job_id}/resubmit")
+async def resubmit_job(
+    background_tasks: BackgroundTasks,
+    job_id: str,
+    gpu_sku: str = Form(None),
+    max_runtime_minutes: int = Form(None),
+    generate_views: str = Form(None),
+    target_height_mm: float = Form(None),
+):
+    """Create a new job by reusing the input files from an existing job.
+
+    Optional form fields can override the original job's gpu_sku, max_runtime_minutes,
+    generate_views, and target_height_mm.
+    Returns the new job_id and queued status.
+    """
+    original = db.get_job(job_id)
+    input_src = _PROJECT_ROOT / "input" / job_id
+    # If original job not in DB, still allow resubmit if local input dir exists
+    if not original and not input_src.exists():
+        raise HTTPException(404, f"Original job not found and no local inputs for: {job_id}")
+
+    # Determine engine and defaults
+    engine = (original.get("engine") if original else job_id.split("-")[0])
+    if engine not in ENGINE_META:
+        raise HTTPException(400, f"Unknown engine: {engine}")
+
+    # Prepare new job id and input dir
+    new_job_id = f"{engine}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    new_input_dir = _PROJECT_ROOT / "input" / new_job_id
+    new_input_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy input files
+    if input_src.exists() and input_src.is_dir():
+        for src in sorted(input_src.iterdir()):
+            dest = new_input_dir / src.name
+            if src.is_file():
+                shutil.copy2(src, dest)
+    else:
+        # Try to find inputs under output/<job_id>/inputs if uploaded by runner
+        alt = _PROJECT_ROOT / "output" / job_id / "inputs"
+        if alt.exists():
+            for src in sorted(alt.rglob("*")):
+                if src.is_file():
+                    rel = src.relative_to(alt)
+                    dest = new_input_dir / rel.name
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dest)
+        else:
+            raise HTTPException(404, f"No input files found for job: {job_id}")
+
+    # Resolve overrides or fall back to original job values
+    gpu = gpu_sku if gpu_sku else (original.get("gpu_sku") if original else "A100")
+    max_rt = max_runtime_minutes if max_runtime_minutes else (original.get("max_runtime_minutes") if original else 30)
+    gen_views = (generate_views.lower() in ("true","1","yes")) if generate_views else (original.get("generate_views") if original else False)
+    th = float(target_height_mm) if target_height_mm else (original.get("target_height_mm") if original else 0.0)
+
+    # Create DB entry and queue background task
+    job = {
+        "job_id": new_job_id,
+        "engine": engine,
+        "gpu_sku": gpu,
+        "status": "queued",
+        "created_at": time.time(),
+        "started_at": None,
+        "finished_at": None,
+        "output_dir": None,
+        "error": None,
+        "image_count": len(list(new_input_dir.iterdir())),
+    }
+    db.upsert_job(job)
+
+    background_tasks.add_task(
+        _run_job,
+        new_job_id,
+        engine,
+        new_input_dir,
+        gpu,
+        max_rt,
+        gen_views,
+        th,
+    )
+
+    return {"job_id": new_job_id, "status": "queued"}
