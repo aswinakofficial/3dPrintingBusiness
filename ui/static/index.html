@@ -284,6 +284,38 @@
     <p id="compare-empty" class="text-gray-500 text-center py-20">No models added yet.</p>
   </div>
 
+  <!-- Resubmit modal -->
+  <div id="resubmit-modal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden z-50">
+    <div class="bg-gray-900 rounded-xl p-6 w-96">
+      <h3 class="text-lg font-semibold mb-3">Resubmit Job</h3>
+      <p id="resubmit-orig" class="text-xs text-gray-400 mb-3"></p>
+
+      <div class="space-y-3 mb-4">
+        <label class="block text-xs text-gray-400">GPU</label>
+        <select id="resubmit-gpu" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm">
+          <option value="T4">T4</option>
+          <option value="A100">A100</option>
+        </select>
+
+        <label class="block text-xs text-gray-400">Max runtime (minutes)</label>
+        <input id="resubmit-runtime" type="number" min="10" max="240" value="45" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm" />
+
+        <label class="inline-flex items-center gap-2 text-xs text-gray-400"><input id="resubmit-genviews" type="checkbox" class="w-4 h-4" /> Generate views</label>
+
+        <label class="block text-xs text-gray-400">Target height (mm)</label>
+        <input id="resubmit-height" type="number" min="10" max="500" value="100" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm" />
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button id="resubmit-cancel" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded">Cancel</button>
+        <button id="resubmit-confirm" class="px-3 py-1.5 bg-yellow-700 hover:bg-yellow-600 rounded">Resubmit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
   <script src="/app.js"></script>
 </body>
 </html>

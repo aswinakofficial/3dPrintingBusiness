@@ -359,6 +359,13 @@ def get_log(job_id: str):
     text = log_path.read_text(errors="replace")
     return {"log": text[-4000:]}
 
+@router.get("/jobs/{job_id}/has_inputs")
+def has_inputs(job_id: str):
+    """Check whether local input files exist for a given job id."""
+    input_dir = _PROJECT_ROOT / "input" / job_id
+    has = input_dir.exists() and any(input_dir.iterdir())
+    return {"has_inputs": bool(has)}
+
 
 @router.post("/jobs/{job_id}/resubmit")
 async def resubmit_job(

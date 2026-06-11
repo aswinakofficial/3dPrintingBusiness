@@ -312,11 +312,11 @@ async function showFailure(jobId, errorSummary) {
   if (!panel) return;
   panel.classList.remove('hidden');
 
-  // Wire up the failure-panel resubmit button to resubmit this job
+  // Wire up the failure-panel resubmit button to open the resubmit modal for this job
   const resBtn = document.getElementById('failure-resubmit-btn');
   if (resBtn) {
     resBtn.disabled = false;
-    resBtn.onclick = (ev) => { ev.stopPropagation(); resubmitJob(jobId); };
+    resBtn.onclick = (ev) => { ev.stopPropagation(); openResubmitModal(jobId); };
   }
 
   try {
@@ -331,8 +331,8 @@ async function showFailure(jobId, errorSummary) {
 
 
 async function resubmitFromPanel() {
-  if (!currentJobId) return alert('No job selected to resubmit');
-  await resubmitJob(currentJobId);
+  if (!currentJobId) return showToast('No job selected to resubmit');
+  openResubmitModal(currentJobId);
 }
 
 function setStatusBadge(status) {
@@ -453,7 +453,7 @@ function renderHistory() {
           class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-gray-800 hover:bg-red-700 text-gray-400 hover:text-white text-xs transition z-10"
           title="Delete job">✕</button>` : ''}
         ${job.status === 'failed' ? `<button
-          onclick="event.stopPropagation();resubmitJob('${job.job_id}')"
+          onclick="event.stopPropagation();openResubmitModal('${job.job_id}')"
           id="resubmit-btn-${job.job_id}"
           class="absolute top-2 right-12 w-6 h-6 flex items-center justify-center rounded-full bg-yellow-700 hover:bg-yellow-600 text-white text-xs transition z-10"
           title="Resubmit job">↻</button>` : ''}
@@ -476,6 +476,25 @@ function renderHistory() {
     allCb.checked = selectableIds.length > 0 && selectableIds.every(id => selectedJobs.has(id));
     allCb.indeterminate = !allCb.checked && selectableIds.some(id => selectedJobs.has(id));
   }
+
+  // Post-render: disable resubmit buttons when local inputs are missing to avoid server errors
+  (async () => {
+    const failedJobs = jobs.filter(j => j.status === 'failed');
+    for (const j of failedJobs) {
+      const btn = document.getElementById(`resubmit-btn-${j.job_id}`);
+      if (!btn) continue;
+      try {
+        const r = await fetch(`/jobs/${encodeURIComponent(j.job_id)}/has_inputs`);
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (!d.has_inputs) {
+          btn.disabled = true;
+          btn.title = 'Original input files not available locally; cannot resubmit';
+          btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+      } catch (_) {}
+    }
+  })();
 }
 
 // ── History — delete & bulk select ───────────────────────────────────────────
@@ -561,12 +580,18 @@ function openJob(jobId, engine, status) {
 }
 
 // ── Resubmit helper
-async function resubmitJob(originalJobId) {
+async function resubmitJob(originalJobId, overrides=null) {
   try {
     const btn = document.getElementById(`resubmit-btn-${originalJobId}`);
     if (btn) { btn.disabled = true; btn.textContent = 'Queued'; }
 
     const form = new FormData();
+    if (overrides) {
+      if (overrides.gpu_sku) form.append('gpu_sku', overrides.gpu_sku);
+      if (overrides.max_runtime_minutes) form.append('max_runtime_minutes', String(overrides.max_runtime_minutes));
+      if (typeof overrides.generate_views !== 'undefined') form.append('generate_views', overrides.generate_views ? 'true' : 'false');
+      if (typeof overrides.target_height_mm !== 'undefined') form.append('target_height_mm', String(overrides.target_height_mm));
+    }
     const res = await fetch(`/jobs/${encodeURIComponent(originalJobId)}/resubmit`, { method: 'POST', body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -578,14 +603,69 @@ async function resubmitJob(originalJobId) {
 
     // Refresh history and open status for new job
     await loadHistory();
-    openStatusView(newJobId, (allJobs.find(j => j.job_id === originalJobId)?.engine) || originalJobId.split('-')[0]);
-    alert(`Resubmitted: ${newJobId}`);
+    // Open status view handled by toast callback; ensure history refreshed
+    await loadHistory();
+    showToast(`Resubmitted: ${newJobId}`, 6000, () => openStatusView(newJobId, (allJobs.find(j => j.job_id === originalJobId)?.engine) || originalJobId.split('-')[0]));
   } catch (e) {
-    alert(e.message);
+    showToast(`Error: ${e.message}`, 6000);
   } finally {
     const btn = document.getElementById(`resubmit-btn-${originalJobId}`);
     if (btn) { btn.disabled = false; btn.textContent = '↻'; }
   }
+}
+
+// ── Resubmit modal helpers
+let _resubmit_orig = null;
+function openResubmitModal(jobId) {
+  _resubmit_orig = jobId;
+  const modal = document.getElementById('resubmit-modal');
+  const orig = document.getElementById('resubmit-orig');
+  orig.textContent = `Original job: ${jobId}`;
+  // Prefill defaults
+  document.getElementById('resubmit-gpu').value = 'A100';
+  document.getElementById('resubmit-runtime').value = 45;
+  document.getElementById('resubmit-genviews').checked = false;
+  document.getElementById('resubmit-height').value = 100;
+
+  // If job metadata available, use those values (best-effort)
+  const j = allJobs.find(x => x.job_id === jobId) || {};
+  if (j.gpu_sku) document.getElementById('resubmit-gpu').value = j.gpu_sku;
+
+  modal.classList.remove('hidden');
+
+  // Wire buttons
+  document.getElementById('resubmit-cancel').onclick = () => { modal.classList.add('hidden'); };
+  document.getElementById('resubmit-confirm').onclick = async () => {
+    const overrides = {
+      gpu_sku: document.getElementById('resubmit-gpu').value,
+      max_runtime_minutes: Number(document.getElementById('resubmit-runtime').value),
+      generate_views: document.getElementById('resubmit-genviews').checked,
+      target_height_mm: Number(document.getElementById('resubmit-height').value),
+    };
+    modal.classList.add('hidden');
+    await resubmitJob(jobId, overrides);
+  };
+}
+
+// Simple toast
+function showToast(message, ms = 4000, cb = null) {
+  const container = document.getElementById('toast-container');
+  const id = 'toast-' + Date.now();
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'bg-gray-800 text-white px-4 py-2 rounded shadow';
+  el.textContent = message;
+  if (cb) {
+    const btn = document.createElement('button');
+    btn.textContent = ' Open';
+    btn.className = 'ml-2 underline text-sm';
+    btn.onclick = cb;
+    el.appendChild(btn);
+  }
+  container.appendChild(el);
+  setTimeout(() => {
+    el.remove();
+  }, ms);
 }
 
 // ── Compare ───────────────────────────────────────────────────────────────────
