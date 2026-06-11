@@ -453,10 +453,10 @@ function renderHistory() {
           class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-gray-800 hover:bg-red-700 text-gray-400 hover:text-white text-xs transition z-10"
           title="Delete job">✕</button>` : ''}
         ${job.status === 'failed' ? `<button
-          onclick="event.stopPropagation();openResubmitModal('${job.job_id}')"
+          ${job.has_inputs ? `onclick="event.stopPropagation();openResubmitModal('${job.job_id}')"` : 'disabled'}
           id="resubmit-btn-${job.job_id}"
-          class="absolute top-2 right-12 w-6 h-6 flex items-center justify-center rounded-full bg-yellow-700 hover:bg-yellow-600 text-white text-xs transition z-10"
-          title="Resubmit job">↻</button>` : ''}
+          class="absolute top-2 right-12 w-6 h-6 flex items-center justify-center rounded-full ${job.has_inputs ? 'bg-yellow-700 hover:bg-yellow-600' : 'bg-gray-700 opacity-50 cursor-not-allowed'} text-white text-xs transition z-10"
+          title="${job.has_inputs ? 'Resubmit job' : 'Original input files not available locally; cannot resubmit'}">↻</button>` : ''}
         <div class="p-3">
           <div class="flex items-center justify-between mb-1">
             <span class="text-xs font-semibold px-2 py-0.5 rounded engine-badge-${col}">${job.engine}</span>
@@ -477,24 +477,6 @@ function renderHistory() {
     allCb.indeterminate = !allCb.checked && selectableIds.some(id => selectedJobs.has(id));
   }
 
-  // Post-render: disable resubmit buttons when local inputs are missing to avoid server errors
-  (async () => {
-    const failedJobs = jobs.filter(j => j.status === 'failed');
-    for (const j of failedJobs) {
-      const btn = document.getElementById(`resubmit-btn-${j.job_id}`);
-      if (!btn) continue;
-      try {
-        const r = await fetch(`/jobs/${encodeURIComponent(j.job_id)}/has_inputs`);
-        if (!r.ok) continue;
-        const d = await r.json();
-        if (!d.has_inputs) {
-          btn.disabled = true;
-          btn.title = 'Original input files not available locally; cannot resubmit';
-          btn.classList.add('opacity-50', 'cursor-not-allowed');
-        }
-      } catch (_) {}
-    }
-  })();
 }
 
 // ── History — delete & bulk select ───────────────────────────────────────────
