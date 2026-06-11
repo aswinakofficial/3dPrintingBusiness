@@ -63,15 +63,15 @@ def upsert_job(job: dict) -> None:
             image_count = excluded.image_count
         """,
         {
-            "job_id":      job.get("job_id"),
-            "engine":      job.get("engine"),
-            "gpu_sku":     job.get("gpu_sku"),
-            "status":      job.get("status"),
-            "created_at":  job.get("created_at"),
-            "started_at":  job.get("started_at"),
+            "job_id": job.get("job_id"),
+            "engine": job.get("engine"),
+            "gpu_sku": job.get("gpu_sku"),
+            "status": job.get("status"),
+            "created_at": job.get("created_at"),
+            "started_at": job.get("started_at"),
             "finished_at": job.get("finished_at"),
-            "output_dir":  job.get("output_dir"),
-            "error":       job.get("error"),
+            "output_dir": job.get("output_dir"),
+            "error": job.get("error"),
             "image_count": job.get("image_count"),
         },
     )
@@ -79,16 +79,16 @@ def upsert_job(job: dict) -> None:
 
 
 def get_job(job_id: str) -> Optional[dict]:
-    row = _conn().execute(
-        "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
-    ).fetchone()
+    row = _conn().execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
     return dict(row) if row else None
 
 
 def list_jobs(limit: int = 100) -> list[dict]:
-    rows = _conn().execute(
-        "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
-    ).fetchall()
+    rows = (
+        _conn()
+        .execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,))
+        .fetchall()
+    )
     return [dict(r) for r in rows]
 
 

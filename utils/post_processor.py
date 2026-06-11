@@ -46,8 +46,10 @@ class PostProcessingConfig:
     target_face_count: int = 0  # 0 = auto from engine profile
 
     # Print-prep settings
-    auto_orient: bool = True          # rotate to most stable print pose before export
-    target_height_mm: float = 0.0    # 0 = no scaling; >0 scales largest dim to this mm value
+    auto_orient: bool = True  # rotate to most stable print pose before export
+    target_height_mm: float = (
+        0.0  # 0 = no scaling; >0 scales largest dim to this mm value
+    )
 
 
 class MeshRepair:
@@ -459,13 +461,13 @@ class MeshOptimizer:
     """Layer 2: universal mesh cleanup — debris removal, watertight repair, decimation, smoothing."""
 
     ENGINE_FACE_TARGETS = {
-        "trellis":      100_000,
-        "meshroom":     200_000,
-        "hunyuan3d":     80_000,
-        "triposg":       60_000,
-        "sf3d":          60_000,
-        "spar3d":        60_000,
-        "instantmesh":   80_000,
+        "trellis": 100_000,
+        "meshroom": 200_000,
+        "hunyuan3d": 80_000,
+        "triposg": 60_000,
+        "sf3d": 60_000,
+        "spar3d": 60_000,
+        "instantmesh": 80_000,
     }
     DEFAULT_FACE_TARGET = 80_000
 
@@ -506,6 +508,7 @@ class MeshOptimizer:
     def _pymeshfix_watertight(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
         try:
             import pymeshfix
+
             mf = pymeshfix.MeshFix(mesh.vertices, mesh.faces)
             mf.repair()
             repaired = trimesh.Trimesh(vertices=mf.v, faces=mf.f, process=False)
@@ -532,9 +535,12 @@ class MeshOptimizer:
             return mesh
         try:
             import pyfqmr
+
             simplifier = pyfqmr.Simplify()
             simplifier.setMesh(mesh.vertices, mesh.faces)
-            simplifier.simplify_mesh(target_count=target, aggressiveness=7, verbose=False)
+            simplifier.simplify_mesh(
+                target_count=target, aggressiveness=7, verbose=False
+            )
             verts, faces, _ = simplifier.getMesh()
             decimated = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
             logger.info(f"pyfqmr decimation: {current} → {len(decimated.faces)} faces")
@@ -547,9 +553,7 @@ class MeshOptimizer:
         try:
             ratio = target / current
             decimated = mesh.simplify_quadric_decimation(ratio)
-            logger.info(
-                f"trimesh decimation: {current} → {len(decimated.faces)} faces"
-            )
+            logger.info(f"trimesh decimation: {current} → {len(decimated.faces)} faces")
             return decimated
         except Exception as exc:
             logger.warning(f"trimesh decimation also failed ({exc}); keeping original")
@@ -639,9 +643,7 @@ class PrintQualityValidator:
             score -= 10
         return max(0, score)
 
-    def _issues(
-        self, mesh: trimesh.Trimesh, watertight: bool, components: int
-    ) -> list:
+    def _issues(self, mesh: trimesh.Trimesh, watertight: bool, components: int) -> list:
         issues = []
         if not watertight:
             issues.append("Not watertight — will not slice cleanly")
@@ -705,7 +707,9 @@ def _apply_stable_orientation(mesh: trimesh.Trimesh) -> np.ndarray:
         try:
             transforms, probs = fn(mesh)
             if len(transforms) > 0:
-                logger.info(f"Auto-orientation: best stable pose confidence={probs[0]:.2f}")
+                logger.info(
+                    f"Auto-orientation: best stable pose confidence={probs[0]:.2f}"
+                )
                 return transforms[0]
         except Exception as exc:
             logger.debug(f"stable_poses via {fn_name} failed ({exc})")
@@ -775,7 +779,8 @@ class PostProcessingPipeline:
                     if isinstance(g, trimesh.Trimesh) and len(g.faces) > 0
                 ]
                 mesh_flat = (
-                    trimesh.util.concatenate(flat_parts) if flat_parts
+                    trimesh.util.concatenate(flat_parts)
+                    if flat_parts
                     else trimesh.Trimesh()
                 )
                 logger.info(
@@ -804,6 +809,7 @@ class PostProcessingPipeline:
                 # Resolve output path
                 if output_path is None:
                     from datetime import datetime
+
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                     output_path = f"output/postprocessed/{ts}_processed.glb"
                 output_path = Path(output_path)
@@ -879,10 +885,9 @@ class PostProcessingPipeline:
                 # Resolve output path
                 if output_path is None:
                     from datetime import datetime
+
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    output_path = (
-                        f"output/postprocessed/{ts}_processed.{self.config.output_format}"
-                    )
+                    output_path = f"output/postprocessed/{ts}_processed.{self.config.output_format}"
                 output_path = Path(output_path)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -916,7 +921,8 @@ class PostProcessingPipeline:
             logger.info(f"Saved print report to {report_path}")
 
             support_path = (
-                None if textured
+                None
+                if textured
                 else (
                     str(support_path)
                     if support_result and support_result.get("support_mesh") is not None
@@ -932,7 +938,9 @@ class PostProcessingPipeline:
                 "faces": len(mesh.faces),
                 "textured": textured,
                 "has_supports": (
-                    support_result.get("has_supports", False) if support_result else False
+                    support_result.get("has_supports", False)
+                    if support_result
+                    else False
                 ),
                 "overhang_faces": (
                     support_result.get("overhang_faces", 0) if support_result else 0

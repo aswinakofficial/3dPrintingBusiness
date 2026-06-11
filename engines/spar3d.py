@@ -34,7 +34,7 @@ logger = get_logger()
 _BAKE_TIERS = [
     {"bake_resolution": 2048, "remesh": "quad", "label": "high"},
     {"bake_resolution": 1024, "remesh": "quad", "label": "med"},
-    {"bake_resolution": 512,  "remesh": "quad", "label": "low"},
+    {"bake_resolution": 512, "remesh": "quad", "label": "low"},
 ]
 
 

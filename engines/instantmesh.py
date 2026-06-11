@@ -325,6 +325,7 @@ class InstantMeshEngine(Engine):
         # Repair each mesh component: fix winding and fill open holes
         try:
             import trimesh.repair
+
             meshes = (
                 list(scene.geometry.values())
                 if isinstance(scene, trimesh.Scene)

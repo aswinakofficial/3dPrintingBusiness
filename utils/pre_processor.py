@@ -212,8 +212,12 @@ class ImagePreprocessor:
                 weights_path = "RealESRGAN_x4plus"
 
             model = RRDBNet(
-                num_in_ch=3, num_out_ch=3, num_feat=64,
-                num_block=23, num_grow_ch=32, scale=4,
+                num_in_ch=3,
+                num_out_ch=3,
+                num_feat=64,
+                num_block=23,
+                num_grow_ch=32,
+                scale=4,
             )
             upsampler = RealESRGANer(
                 scale=4,
@@ -227,9 +231,7 @@ class ImagePreprocessor:
             rgb = np.array(image.convert("RGB"))
             out_rgb, _ = upsampler.enhance(rgb, outscale=4)
             result = Image.fromarray(out_rgb)
-            logger.info(
-                f"Real-ESRGAN upscale: {image.size} → {result.size}"
-            )
+            logger.info(f"Real-ESRGAN upscale: {image.size} → {result.size}")
             return result
         except ImportError:
             logger.debug("realesrgan not installed, skipping upscale")

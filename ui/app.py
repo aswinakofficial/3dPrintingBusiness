@@ -52,6 +52,7 @@ _FAVICON = Path(__file__).parent / "static" / "favicon.svg"
 async def favicon():
     return FileResponse(_FAVICON, media_type="image/svg+xml")
 
+
 app.mount(
     "/",
     StaticFiles(directory=Path(__file__).parent / "static", html=True),
@@ -77,6 +78,7 @@ async def _cleanup_old_outputs(max_age_days: int = 30) -> None:
             continue
         if job_dir.stat().st_mtime < cutoff:
             import shutil
+
             try:
                 shutil.rmtree(job_dir)
             except Exception:

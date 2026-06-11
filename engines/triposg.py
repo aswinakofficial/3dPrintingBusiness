@@ -89,10 +89,12 @@ class TripoSGEngine(Engine):
                     "triposg appears installed but expected 'TripoSGPipeline' was not found. "
                     f"Available top-level members: {available}. "
                     "Ensure the runtime image installs the triposg package version that provides TripoSGPipeline, "
-                    "or update this engine to use the available API.") from exc
+                    "or update this engine to use the available API."
+                ) from exc
             except Exception:
                 raise RuntimeError(
-                    f"triposg package not installed or broken in container: {exc}") from exc
+                    f"triposg package not installed or broken in container: {exc}"
+                ) from exc
 
         logger.info("triposg imports OK")
         return True

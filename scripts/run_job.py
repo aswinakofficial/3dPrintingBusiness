@@ -120,6 +120,7 @@ def _resolve_hf_token() -> str:
         return token
     try:
         from azure.keyvault.secrets import SecretClient
+
         kv_name = os.getenv("AZURE_KEY_VAULT_NAME", _DEFAULT_KV_NAME)
         client = SecretClient(
             vault_url=f"https://{kv_name}.vault.azure.net",
@@ -132,6 +133,8 @@ def _resolve_hf_token() -> str:
     except Exception as exc:
         logger.warning(f"Could not load HF_TOKEN from Key Vault: {exc}")
     return token
+
+
 _DEFAULT_LOCATION = "westus"
 _DEFAULT_CONTAINER_APPS_ENV = "cae-3dfiglab-dev"
 _DEFAULT_FILE_STORAGE_ACCOUNT = "st3dfiglabdev"
@@ -592,8 +595,11 @@ class JobsRunner:
                             "--output",
                             f"/workspace/outputs/{job_id}",
                             *(["--generate-views"] if generate_views else []),
-                            *(["--target-height-mm", str(target_height_mm)]
-                              if target_height_mm > 0 else []),
+                            *(
+                                ["--target-height-mm", str(target_height_mm)]
+                                if target_height_mm > 0
+                                else []
+                            ),
                         ],
                         volume_mounts=[
                             VolumeMount(

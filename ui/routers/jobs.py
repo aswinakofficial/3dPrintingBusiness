@@ -193,7 +193,11 @@ def list_jobs(limit: int = 100):
     extra = []
     if output_root.exists():
         for job_dir in sorted(output_root.iterdir(), reverse=True):
-            if job_dir.name.startswith(".") or job_dir.name in seen or not job_dir.is_dir():
+            if (
+                job_dir.name.startswith(".")
+                or job_dir.name in seen
+                or not job_dir.is_dir()
+            ):
                 continue
             engine = job_dir.name.split("-")[0] if "-" in job_dir.name else "unknown"
             glb = next(job_dir.rglob("final_mesh.glb"), None)
@@ -324,11 +328,15 @@ def _purge_job(job_id: str) -> None:
     # Best-effort share cleanup — may already be clean from post-download hook
     try:
         from scripts.run_job import AzureConfig, JobsRunner
+
         runner = JobsRunner(AzureConfig.from_env())
         runner.cleanup_share(job_id)
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).warning(f"Share cleanup skipped for {job_id}: {exc}")
+
+        logging.getLogger(__name__).warning(
+            f"Share cleanup skipped for {job_id}: {exc}"
+        )
 
 
 @router.delete("/jobs/{job_id}")
@@ -365,6 +373,7 @@ def get_log(job_id: str):
     text = log_path.read_text(errors="replace")
     return {"log": text[-4000:]}
 
+
 @router.get("/jobs/{job_id}/has_inputs")
 def has_inputs(job_id: str):
     """Check whether local input files exist for a given job id."""
@@ -392,10 +401,12 @@ async def resubmit_job(
     input_src = _PROJECT_ROOT / "input" / job_id
     # If original job not in DB, still allow resubmit if local input dir exists
     if not original and not input_src.exists():
-        raise HTTPException(404, f"Original job not found and no local inputs for: {job_id}")
+        raise HTTPException(
+            404, f"Original job not found and no local inputs for: {job_id}"
+        )
 
     # Determine engine and defaults
-    engine = (original.get("engine") if original else job_id.split("-")[0])
+    engine = original.get("engine") if original else job_id.split("-")[0]
     if engine not in ENGINE_META:
         raise HTTPException(400, f"Unknown engine: {engine}")
 
@@ -425,9 +436,21 @@ async def resubmit_job(
 
     # Resolve overrides or fall back to original job values
     gpu = gpu_sku if gpu_sku else (original.get("gpu_sku") if original else "A100")
-    max_rt = max_runtime_minutes if max_runtime_minutes else (original.get("max_runtime_minutes") if original else 30)
-    gen_views = (generate_views.lower() in ("true","1","yes")) if generate_views else (original.get("generate_views") if original else False)
-    th = float(target_height_mm) if target_height_mm else (original.get("target_height_mm") if original else 0.0)
+    max_rt = (
+        max_runtime_minutes
+        if max_runtime_minutes
+        else (original.get("max_runtime_minutes") if original else 30)
+    )
+    gen_views = (
+        (generate_views.lower() in ("true", "1", "yes"))
+        if generate_views
+        else (original.get("generate_views") if original else False)
+    )
+    th = (
+        float(target_height_mm)
+        if target_height_mm
+        else (original.get("target_height_mm") if original else 0.0)
+    )
 
     # Create DB entry and queue background task
     job = {

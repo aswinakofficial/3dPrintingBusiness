@@ -291,6 +291,7 @@ class TRELLIS2Engine(Engine):
         # Repair: fix winding and fill holes before export
         try:
             import trimesh.repair
+
             mesh.fix_normals()
             trimesh.repair.fill_holes(mesh)
         except Exception as _rep_err:
